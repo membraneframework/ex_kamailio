@@ -1,0 +1,106 @@
+defmodule ExMedia.CommandHandler.Default do
+  @moduledoc false
+  use GenServer
+  require Logger
+
+
+  @behaviour ExMedia.CommandHandler
+
+
+  alias ExMedia.{PortPool, SDPAdapter}
+
+  @impl true
+  def handle_command(cmd), do: GenServer.call(__MODULE__, {:command, cmd})
+
+
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  # -- GenServer --
+  @impl true
+  def init(_opts) do
+    {:ok,
+      %{
+        sessions: %{},
+        media_ip: Application.fetch_env!(:ex_media, :media_ip),
+        allowed_pts: MapSet.new(Application.get_env(:ex_media, :allowed_pts, []))
+       }
+    }
+  end
+
+
+  @impl true
+  def handle_call({:command, cmd}, _from, state) do
+    case route(cmd, state) do
+      {:reply, io, st} -> {:reply, {:ok, IO.iodata_to_binary(io)}, st}
+      {:error, reason, st} -> {:reply, {:error, reason}, st}
+    end
+  end
+
+
+  # -- routing --
+  defp route(%{command: c} = cmd, state) when is_binary(c), do: route(%{cmd | command: String.to_atom(c)}, state)
+  defp route(%{command: :offer} = cmd, s), do: do_offer(cmd, s)
+  defp route(%{command: :answer} = cmd, s), do: do_answer(cmd, s)
+  defp route(%{command: :delete} = cmd, s), do: do_delete(cmd, s)
+  defp route(cmd, s), do: {:error, {:unknown_command, cmd}, s}
+
+
+  # -- OFFER --
+  defp do_offer(cmd, state) do
+    call_id = fetch(cmd, [:call_id, "call_id", "call-id"], "unknown")
+    from_tag = fetch(cmd, [:from_tag, "from_tag", "from-tag"], "ftag")
+
+
+    remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
+    {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
+
+
+    with {:ok, {rtp, rtcp, rtp_sock, rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
+      sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
+
+
+      sessions = Map.put(state.sessions, {call_id, from_tag}, %{rtp: rtp_sock, rtcp: rtcp_sock, rtp_port: rtp, rtcp_port: rtcp})
+      reply = Jason.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
+      {:reply, reply, %{state | sessions: sessions}}
+    else
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+
+  # -- ANSWER --
+  defp do_answer(cmd, state) do
+    call_id = fetch(cmd, [:call_id, "call_id", "call-id"], "unknown")
+    from_tag = fetch(cmd, [:from_tag, "from_tag", "from-tag"], "ftag")
+
+
+    case Map.fetch(state.sessions, {call_id, from_tag}) do
+      {:ok, %{rtp_port: rtp, rtcp_port: rtcp}} ->
+        remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
+        {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
+        sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
+        {:reply, Jason.encode!(%{result: "ok", sdp: sdp}), state}
+      :error ->
+        {:error, :unknown_session, state}
+    end
+  end
+
+  defp do_delete(cmd, state) do
+    key = {fetch(cmd, [:call_id, "call_id", "call-id"], "unknown"),
+    fetch(cmd, [:from_tag, "from_tag", "from-tag"], "ftag")}
+
+    case Map.pop(state.sessions, key) do
+      {nil, _} ->
+        {:error, :unknown_session, state}
+      {%{rtp: rtp_sock, rtcp: rtcp_sock, rtp_port: rtp, rtcp_port: rtcp}, sessions} ->
+        :ok = :gen_udp.close(rtp_sock)
+        :ok = :gen_udp.close(rtcp_sock)
+        :ok = PortPool.release(key, {rtp, rtcp})
+        {:reply, Jason.encode!(%{result: "ok"}), %{state | sessions: sessions}}
+    end
+  end
+
+
+  defp fetch(map, keys, default), do: Enum.find_value(keys, default, &Map.get(map, &1))
+
+end
