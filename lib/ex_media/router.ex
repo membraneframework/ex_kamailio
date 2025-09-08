@@ -9,7 +9,8 @@ defmodule ExMedia.Router do
     send_resp(conn, 200, "ok")
   end
 
-  get "/rtpengine" do
+  #get "/rtpengine" do
+  get "/" do
     # Upgrade to WebSocket using WebSock
     conn
     |> WebSockAdapter.upgrade(ExMedia.WebSocket, %{}, [])

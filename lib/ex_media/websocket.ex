@@ -8,23 +8,30 @@ defmodule ExMedia.WebSocket do
     {:ok, %{handler: pid}}
   end
 
+  #{"0_6251_0 d7:command4:pinge", [opcode: :text]}
   @impl true
-  def handle_in({"text", payload}, state) do
-    case decode_message(payload) do
-      {:ok, cmd} ->
-        case GenServer.call(state.handler, {:command, cmd}, 60_000) do
-          {:ok, reply} -> {:reply, {:text, reply}, state}
-          {:error, reason} -> {:reply, {:text, error_reply(reason)}, state}
-        end
-
-      {:error, reason} ->
-        {:reply, {:text, error_reply(reason)}, state}
+  def handle_in({ecommand, [opcode: :text]}, state) do
+    [cookie, fullcommand] = String.split(ecommand, " ", parts: 2)
+    IO.inspect(%{command: fullcommand, cookie: cookie})
+    with {:ok, %{"command" => comm}} <- Bento.decode(fullcommand) do
+      handle_command(comm, cookie, fullcommand, state)
+    else
+      _ ->
+        {:ok, bencode_error} = Bento.encode(%{"result" => "error", "error-reason" => "unsupported"})
+        payload = IO.iodata_to_binary(bencode_error)
+        {:push, {:text, <<cookie, " ", payload>>}, state}
     end
   end
 
-  def handle_in(other, state) do
-    IO.inspect(other)
-    {:ok, state}
+  defp handle_command("ping", cookie, _fullcommand, state) do
+    {:ok, bencode_pong} = Bento.encode(%{result: "pong"})
+    payload = IO.iodata_to_binary(bencode_pong)
+    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
+  end
+  defp handle_command(_comm, cookie, _, state) do
+    {:ok, bencode_error} = Bento.encode(%{"result" => "error", "error-reason" => "unsupported"})
+    payload = IO.iodata_to_binary(bencode_error)
+    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
   end
 
   @impl true
@@ -33,45 +40,4 @@ defmodule ExMedia.WebSocket do
   @impl true
   def terminate(_reason, _state), do: :ok
 
-  # Accept JSON or a simple line-based format: "offer {json...}" / "delete {json...}"
-  defp decode_message(payload) when is_binary(payload) do
-    with {:json, {:ok, map}} <- {:json, Jason.decode(payload)},
-         %{"command" => _} = map <- normalize_keys(map) do
-      {:ok, map}
-    else
-      {:json, _} ->
-        case String.trim(payload) do
-          <<>> -> {:error, :empty}
-          line -> parse_line_command(line)
-        end
-    end
-  end
-
-  defp parse_line_command(line) do
-    # e.g. "offer {\"sdp\":\"...\",\"call_id\":\"abc\"}"
-    case String.split(line, ~r/\s+/, parts: 2) do
-      [cmd] -> {:ok, %{command: String.downcase(cmd)}}
-      [cmd, rest] ->
-        with {:ok, map} <- Jason.decode(rest),
-             map <- normalize_keys(map) do
-          {:ok, Map.put(map, :command, String.downcase(cmd))}
-        else
-          _ -> {:ok, %{command: String.downcase(cmd), raw: rest}}
-        end
-    end
-  end
-
-  defp normalize_keys(map) when is_map(map) do
-    map
-    |> Enum.into(%{}, fn {k, v} ->
-      {normalize_key(k), v}
-    end)
-  end
-
-  defp normalize_key(k) when is_binary(k), do: String.to_atom(k)
-  defp normalize_key(k) when is_atom(k), do: k
-
-  defp error_reply(reason) do
-    Jason.encode!(%{result: "error", reason: inspect(reason)})
-  end
 end

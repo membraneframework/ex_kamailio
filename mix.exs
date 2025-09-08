@@ -26,6 +26,7 @@ defmodule ExMedia.MixProject do
       {:bandit, "~> 1.8"},
       {:websock_adapter, "~> 0.5.8"},
       {:jason, "~> 1.4"},
+      {:bento, "~> 1.0"},
       {:plug, "~> 1.18"}
     ]
   end
