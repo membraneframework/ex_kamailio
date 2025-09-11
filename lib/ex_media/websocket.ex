@@ -13,8 +13,8 @@ defmodule ExMedia.WebSocket do
   def handle_in({ecommand, [opcode: :text]}, state) do
     [cookie, fullcommand] = String.split(ecommand, " ", parts: 2)
     IO.inspect(%{command: fullcommand, cookie: cookie})
-    with {:ok, %{"command" => comm}} <- Bento.decode(fullcommand) do
-      handle_command(comm, cookie, fullcommand, state)
+    with {:ok, %{"command" => comm} = decoded_command} <- Bento.decode(fullcommand) do
+      handle_command(comm, cookie, decoded_command, state)
     else
       _ ->
         {:ok, bencode_error} = Bento.encode(%{"result" => "error", "error-reason" => "unsupported"})
@@ -26,6 +26,15 @@ defmodule ExMedia.WebSocket do
   defp handle_command("ping", cookie, _fullcommand, state) do
     {:ok, bencode_pong} = Bento.encode(%{result: "pong"})
     payload = IO.iodata_to_binary(bencode_pong)
+    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
+  end
+  defp handle_command("offer", cookie, command, %{handler: pid} = state) do
+    {:ok, payload} = GenServer.call(pid, {:command, command})
+    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
+  end
+  defp handle_command("answer", cookie, command, %{handler: pid} = state) do
+    Logger.info(%{answer: command})
+    {:ok, payload} = GenServer.call(pid, {:command, command})
     {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
   end
   defp handle_command(_comm, cookie, _, state) do

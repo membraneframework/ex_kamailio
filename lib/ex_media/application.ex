@@ -11,6 +11,7 @@ defmodule ExMedia.Application do
     children = [
       {ExMedia.PortPool, []},
       {ExMedia.SessionStore, []},
+      {ExMedia.SessionTable, []},
       {Bandit, plug: ExMedia.Router, scheme: :http, port: ws_port}
     ]
 

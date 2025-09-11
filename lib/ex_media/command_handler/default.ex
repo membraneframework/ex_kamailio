@@ -8,16 +8,20 @@ defmodule ExMedia.CommandHandler.Default do
 
 
   alias ExMedia.{PortPool, SDPAdapter}
+  alias ExMedia.SessionStore
 
   @impl true
   def handle_command(cmd), do: GenServer.call(__MODULE__, {:command, cmd})
 
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  #def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+
 
   # -- GenServer --
   @impl true
   def init(_opts) do
+    Logger.info("initializing command handler")
     {:ok,
       %{
         sessions: %{},
@@ -30,6 +34,7 @@ defmodule ExMedia.CommandHandler.Default do
 
   @impl true
   def handle_call({:command, cmd}, _from, state) do
+    IO.inspect(cmd)
     case route(cmd, state) do
       {:reply, io, st} -> {:reply, {:ok, IO.iodata_to_binary(io)}, st}
       {:error, reason, st} -> {:reply, {:error, reason}, st}
@@ -38,17 +43,17 @@ defmodule ExMedia.CommandHandler.Default do
 
 
   # -- routing --
-  defp route(%{command: c} = cmd, state) when is_binary(c), do: route(%{cmd | command: String.to_atom(c)}, state)
-  defp route(%{command: :offer} = cmd, s), do: do_offer(cmd, s)
-  defp route(%{command: :answer} = cmd, s), do: do_answer(cmd, s)
-  defp route(%{command: :delete} = cmd, s), do: do_delete(cmd, s)
+  #defp route(%{command: c} = cmd, state) when is_binary(c), do: route(%{cmd | command: String.to_atom(c)}, state)
+  defp route(%{"command" => "offer"} = cmd, s), do: do_offer(cmd, s)
+  defp route(%{"command" => "answer"} = cmd, s), do: do_answer(cmd, s)
+  defp route(%{"command" => "delete"} = cmd, s), do: do_delete(cmd, s)
   defp route(cmd, s), do: {:error, {:unknown_command, cmd}, s}
 
 
   # -- OFFER --
   defp do_offer(cmd, state) do
-    call_id = fetch(cmd, [:call_id, "call_id", "call-id"], "unknown")
-    from_tag = fetch(cmd, [:from_tag, "from_tag", "from-tag"], "ftag")
+    call_id = fetch(cmd, ["call-id"], "unknown")
+    from_tag = fetch(cmd, ["from-tag"], "ftag")
 
 
     remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
@@ -57,11 +62,18 @@ defmodule ExMedia.CommandHandler.Default do
 
     with {:ok, {rtp, rtcp, rtp_sock, rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
       sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
+      Logger.info(%{callid: call_id, offer: %{"from-tag" => from_tag, "rtp port" => rtp}})
+      sess = %{
+        call_id: call_id,
+        from_tag: from_tag,
+        state: :offered,
+        rtp_port: rtp,
+        rtcp_port: rtcp
+      }
+      :ok = ExMedia.SessionTable.put_session(sess)
 
-
-      sessions = Map.put(state.sessions, {call_id, from_tag}, %{rtp: rtp_sock, rtcp: rtcp_sock, rtp_port: rtp, rtcp_port: rtcp})
-      reply = Jason.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
-      {:reply, reply, %{state | sessions: sessions}}
+      reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
+      {:reply, reply, state}
     else
       {:error, reason} -> {:error, reason, state}
     end
@@ -70,8 +82,12 @@ defmodule ExMedia.CommandHandler.Default do
 
   # -- ANSWER --
   defp do_answer(cmd, state) do
-    call_id = fetch(cmd, [:call_id, "call_id", "call-id"], "unknown")
-    from_tag = fetch(cmd, [:from_tag, "from_tag", "from-tag"], "ftag")
+    call_id = fetch(cmd, ["call-id"], "unknown")
+    from_tag = fetch(cmd, ["from-tag"], "ftag")
+    to_tag = fetch(cmd, ["to-tag"], "ftag")
+
+    Logger.info(%{state: state})
+    Logger.info(%{callid: call_id, answer: %{"from-tag" => from_tag, "to-tag" => to_tag}})
 
 
     case Map.fetch(state.sessions, {call_id, from_tag}) do
