@@ -14,14 +14,13 @@ defmodule ExMedia.CommandHandler.Default do
   def handle_command(cmd), do: GenServer.call(__MODULE__, {:command, cmd})
 
 
-  #def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
 
   # -- GenServer --
   @impl true
   def init(_opts) do
-    Logger.info("initializing command handler")
+    Logger.info("initializing command handler instance")
     {:ok,
       %{
         sessions: %{},
@@ -60,7 +59,7 @@ defmodule ExMedia.CommandHandler.Default do
     {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
 
 
-    with {:ok, {rtp, rtcp, rtp_sock, rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
+    with {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
       sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
       Logger.info(%{callid: call_id, offer: %{"from-tag" => from_tag, "rtp port" => rtp}})
       sess = %{
@@ -85,19 +84,22 @@ defmodule ExMedia.CommandHandler.Default do
     call_id = fetch(cmd, ["call-id"], "unknown")
     from_tag = fetch(cmd, ["from-tag"], "ftag")
     to_tag = fetch(cmd, ["to-tag"], "ftag")
+    rtp = fetch(cmd, ["rtp_port"], "ftag")
+    rtcp = fetch(cmd, ["rtcp_port"], "ftag")
 
     Logger.info(%{state: state})
     Logger.info(%{callid: call_id, answer: %{"from-tag" => from_tag, "to-tag" => to_tag}})
 
 
-    case Map.fetch(state.sessions, {call_id, from_tag}) do
-      {:ok, %{rtp_port: rtp, rtcp_port: rtcp}} ->
+    case ExMedia.SessionTable.get_session(call_id) do
+      sess when is_map(sess) ->
         remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
         {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
         sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
-        {:reply, Jason.encode!(%{result: "ok", sdp: sdp}), state}
-      :error ->
-        {:error, :unknown_session, state}
+        {:reply, Bento.encode!(%{result: "ok", sdp: sdp}), state}
+      :nil ->
+        {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
+
     end
   end
 
