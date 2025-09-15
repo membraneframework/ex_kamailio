@@ -12,7 +12,6 @@ defmodule ExMedia.WebSocket do
   @impl true
   def handle_in({ecommand, [opcode: :text]}, state) do
     [cookie, fullcommand] = String.split(ecommand, " ", parts: 2)
-    #IO.inspect(%{command: fullcommand, cookie: cookie})
     with {:ok, %{"command" => comm} = decoded_command} <- Bento.decode(fullcommand) do
       handle_command(comm, cookie, decoded_command, state)
     else
@@ -23,17 +22,19 @@ defmodule ExMedia.WebSocket do
     end
   end
 
-  defp handle_command("ping", cookie, _fullcommand, state) do
+  defp handle_command("ping", cookie, _command, state) do
     {:ok, bencode_pong} = Bento.encode(%{result: "pong"})
     payload = IO.iodata_to_binary(bencode_pong)
-    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
+    Logger.info("pong #{inspect payload}")
+     {:push, {:text, cookie <> " " <> payload}, state}
   end
   defp handle_command("offer", cookie, command, %{handler: pid} = state) do
+    Logger.info("answer: #{inspect command}")
     {:ok, payload} = GenServer.call(pid, {:command, command})
     {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
   end
   defp handle_command("answer", cookie, command, %{handler: pid} = state) do
-    Logger.info(%{answer: command})
+    Logger.info("answer: #{inspect command}")
     {:ok, payload} = GenServer.call(pid, {:command, command})
     {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
   end
@@ -46,13 +47,18 @@ defmodule ExMedia.WebSocket do
     Logger.info(%{"unknown command" => comm})
     {:ok, bencode_error} = Bento.encode(%{"result" => "error", "error-reason" => "unsupported"})
     payload = IO.iodata_to_binary(bencode_error)
-    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
+    {:push, {:text, cookie <> " " <> payload}, state}
   end
 
   @impl true
-  def handle_info(_msg, state), do: {:ok, state}
+  def handle_info(msg, state) do
+    Logger.info("unhandled message #{inspect msg}")
+    {:ok, state}
+  end
 
   @impl true
-  def terminate(_reason, _state), do: :ok
-
+  def terminate(reason, _state) do
+    Logger.error("WS closing: #{inspect(reason)}")
+    :ok
+  end
 end

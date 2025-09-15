@@ -13,7 +13,7 @@ defmodule ExMedia.Router do
   get "/" do
     # Upgrade to WebSocket using WebSock
     conn
-    |> WebSockAdapter.upgrade(ExMedia.WebSocket, %{}, [])
+    |> WebSockAdapter.upgrade(ExMedia.WebSocket, %{}, [timeout: 300000])
   end
 
   match _ do

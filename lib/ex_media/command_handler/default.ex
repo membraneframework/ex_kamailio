@@ -8,7 +8,7 @@ defmodule ExMedia.CommandHandler.Default do
 
 
   alias ExMedia.{PortPool, SDPAdapter}
-  alias ExMedia.SessionStore
+  #alias ExMedia.SessionStore
 
   @impl true
   def handle_command(cmd), do: GenServer.call(__MODULE__, {:command, cmd})
@@ -113,7 +113,6 @@ defmodule ExMedia.CommandHandler.Default do
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
 
     end
-
   end
 
 
