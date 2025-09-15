@@ -104,18 +104,16 @@ defmodule ExMedia.CommandHandler.Default do
   end
 
   defp do_delete(cmd, state) do
-    key = {fetch(cmd, [:call_id, "call_id", "call-id"], "unknown"),
-    fetch(cmd, [:from_tag, "from_tag", "from-tag"], "ftag")}
+    call_id = fetch(cmd, ["call-id"], "unknown")
+    case ExMedia.SessionTable.get_session(call_id) do
+      sess when is_map(sess) ->
+        :ok = ExMedia.SessionTable.delete(call_id)
+        {:reply, Bento.encode!(%{result: "ok"}), state}
+      :nil ->
+        {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
 
-    case Map.pop(state.sessions, key) do
-      {nil, _} ->
-        {:error, :unknown_session, state}
-      {%{rtp: rtp_sock, rtcp: rtcp_sock, rtp_port: rtp, rtcp_port: rtcp}, sessions} ->
-        :ok = :gen_udp.close(rtp_sock)
-        :ok = :gen_udp.close(rtcp_sock)
-        :ok = PortPool.release(key, {rtp, rtcp})
-        {:reply, Jason.encode!(%{result: "ok"}), %{state | sessions: sessions}}
     end
+
   end
 
 

@@ -12,7 +12,7 @@ defmodule ExMedia.WebSocket do
   @impl true
   def handle_in({ecommand, [opcode: :text]}, state) do
     [cookie, fullcommand] = String.split(ecommand, " ", parts: 2)
-    IO.inspect(%{command: fullcommand, cookie: cookie})
+    #IO.inspect(%{command: fullcommand, cookie: cookie})
     with {:ok, %{"command" => comm} = decoded_command} <- Bento.decode(fullcommand) do
       handle_command(comm, cookie, decoded_command, state)
     else
@@ -37,7 +37,13 @@ defmodule ExMedia.WebSocket do
     {:ok, payload} = GenServer.call(pid, {:command, command})
     {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
   end
-  defp handle_command(_comm, cookie, _, state) do
+  defp handle_command("delete", cookie, command, %{handler: pid} = state) do
+    Logger.info(%{delete: command})
+    {:ok, payload} = GenServer.call(pid, {:command, command})
+    {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
+  end
+  defp handle_command(comm, cookie, _, state) do
+    Logger.info(%{"unknown command" => comm})
     {:ok, bencode_error} = Bento.encode(%{"result" => "error", "error-reason" => "unsupported"})
     payload = IO.iodata_to_binary(bencode_error)
     {:push, {:text, <<cookie::binary, " ", payload::binary>>}, state}
