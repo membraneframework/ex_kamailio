@@ -56,7 +56,14 @@ defmodule ExMedia.CommandHandler.Default do
 
 
     remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
+    remote_offer =
+      Enum.map(remote.media,
+        fn %ExSDP.Media{port: port, connection_data: %{address: ip}} ->
+          {:inet.ntoa(ip) |> to_string(), port}
+        end)
+
     {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
+    Logger.debug("remote #{inspect remote}, pts = #{inspect pts}, dir = #{inspect dir}")
 
 
     with {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
@@ -66,9 +73,9 @@ defmodule ExMedia.CommandHandler.Default do
         call_id: call_id,
         from_tag: from_tag,
         state: :offered,
-        rtp_port: rtp,
-        rtcp_port: rtcp
+        offer: %{remote: remote_offer, local: {state.media_ip, rtp}}
       }
+      #IO.inspect(sess)
       :ok = ExMedia.SessionTable.put_session(sess)
 
       reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
@@ -84,19 +91,30 @@ defmodule ExMedia.CommandHandler.Default do
     call_id = fetch(cmd, ["call-id"], "unknown")
     from_tag = fetch(cmd, ["from-tag"], "ftag")
     to_tag = fetch(cmd, ["to-tag"], "ftag")
-    rtp = fetch(cmd, ["rtp_port"], "ftag")
-    rtcp = fetch(cmd, ["rtcp_port"], "ftag")
 
-    Logger.info(%{state: state})
+    #Logger.debug(%{state: state})
     Logger.info(%{callid: call_id, answer: %{"from-tag" => from_tag, "to-tag" => to_tag}})
 
 
     case ExMedia.SessionTable.get_session(call_id) do
       sess when is_map(sess) ->
         remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
+        remote_answer =
+          Enum.map(remote.media,
+            fn %ExSDP.Media{port: port, connection_data: %{address: ip}} ->
+              {:inet.ntoa(ip) |> to_string(), port}
+            end)
         {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
+        {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} = PortPool.checkout({call_id, from_tag})
         sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
-        {:reply, Bento.encode!(%{result: "ok", sdp: sdp}), state}
+        reply = Bento.encode!(%{result: "ok", sdp: sdp})
+        ExMedia.SessionTable.update_session(
+          call_id,
+          fn sess ->
+            Map.put(sess, :answer, %{remote: remote_answer, local: {state.media_ip, rtp}})
+          end
+        )
+        {:reply, reply, state}
       :nil ->
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
 

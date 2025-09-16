@@ -75,6 +75,7 @@ defmodule ExMedia.SessionTable do
       nil -> :error
       sess ->
         new = touch(fun.(sess))
+        IO.inspect(new)
         :ets.insert(@table, {call_id, new})
         :ok
     end
