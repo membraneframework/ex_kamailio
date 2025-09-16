@@ -57,8 +57,12 @@ defmodule ExMedia.WebSocket do
   end
 
   @impl true
-  def terminate(reason, _state) do
+  def terminate(reason, %{handler: pid} = _state) do
     Logger.error("WS closing: #{inspect(reason)}")
+    if Process.alive?(pid) do
+      Logger.info("terminating command handler #{inspect pid}")
+      GenServer.stop(pid, :shutdown)
+    end
     :ok
   end
 end
