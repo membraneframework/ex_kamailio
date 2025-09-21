@@ -13,6 +13,8 @@ defmodule ExMedia.Application do
       {ExMedia.SessionStore, []},
       {ExMedia.SessionTable, []},
       {Bandit, plug: ExMedia.Router, scheme: :http, port: ws_port}
+      {DynamicSupervisor, strategy: :one_for_one, name: ExMedia.PipelineSupervisor}
+      {Registry, keys: :unique, name: ExMedia.PipelineRegistry},
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

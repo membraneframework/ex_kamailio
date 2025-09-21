@@ -5,7 +5,7 @@ defmodule ExMedia.MixProject do
     [
       app: :ex_media,
       version: "0.1.0",
-      elixir: "~> 1.18",
+      elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -27,7 +27,8 @@ defmodule ExMedia.MixProject do
       {:websock_adapter, "~> 0.5.8"},
       {:jason, "~> 1.4"},
       {:bento, "~> 1.0"},
-      {:plug, "~> 1.18"}
+      {:plug, "~> 1.18"},
+      {:shine_membrane_pipeline, git: "https://gitlab.sonoc.io/shine/shine-membrane-pipeline.git"}
     ]
   end
 end
