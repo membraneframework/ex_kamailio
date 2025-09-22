@@ -75,8 +75,12 @@ defmodule ExMedia.CommandHandler.Default do
         state: :offered,
         offer: %{remote: remote_offer, local: {state.media_ip, rtp}}
       }
-      #IO.inspect(sess)
+      #IO.inspect(sess)o
+      res = ExMedia.Membrane.Pipeline.create(call_id)
+      Logger.info("RES = #{inspect res}")
       :ok = ExMedia.SessionTable.put_session(sess)
+
+
 
       reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
       {:reply, reply, state}

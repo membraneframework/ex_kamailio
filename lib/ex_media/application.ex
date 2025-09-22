@@ -12,8 +12,8 @@ defmodule ExMedia.Application do
       {ExMedia.PortPool, []},
       {ExMedia.SessionStore, []},
       {ExMedia.SessionTable, []},
-      {Bandit, plug: ExMedia.Router, scheme: :http, port: ws_port}
-      {DynamicSupervisor, strategy: :one_for_one, name: ExMedia.PipelineSupervisor}
+      {Bandit, plug: ExMedia.Router, scheme: :http, port: ws_port},
+      {DynamicSupervisor, strategy: :one_for_one, name: ExMedia.PipelineSupervisor},
       {Registry, keys: :unique, name: ExMedia.PipelineRegistry},
     ]
 

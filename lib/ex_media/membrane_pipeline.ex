@@ -1,7 +1,7 @@
 defmodule ExMedia.Membrane.Pipeline do
   alias ExMedia.Pipeline
 
-  @type :pipeline_direcion :: client | vendor
+  @type pipeline_direction :: :client | :vendor
   @registry ExMedia.PipelineRegistry
   @sup      ExMedia.PipelineSupervisor
 
@@ -10,21 +10,23 @@ defmodule ExMedia.Membrane.Pipeline do
 
   # ——— Public API ———
 
-  @spec create(pipeline_id()) :: :ok
+  @spec create(Pipeline.pipeline_id()) :: :ok
   def create(pipeline_id) do
-    spec = %{
-      id: pipeline_id,
-      start: {ShineMembranePipeline, :start_link, [ShineMembranePipeline, %{}, [name: via(pipeline_id)]]},
-      restart: :temporary,   # don't restart finished calls
-      shutdown: 5_000,
-      type: :worker
-    }
+    ShineMembranePipeline.start_link()
+    #spec = %{
+    #  id: pipeline_id,
+    #  start: {ShineMembranePipeline, :start_link,
+    #         [ShineMembranePipeline, [], [name: via(pipeline_id)]]} ,
+    #  restart: :temporary,   # don't restart finished calls
+    #  shutdown: 5_000,
+    #  type: :worker
+    #}
 
-    case DynamicSupervisor.start_child(Shine.PipelineSupervisor, spec) of
-      {:ok, pid} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:ok, pid}
-      other -> other
-    end
+    #case DynamicSupervisor.start_child(ExMedia.PipelineSupervisor, spec) do
+    #  {:ok, pid} -> {:ok, pid}
+    #  {:error, {:already_started, pid}} -> {:ok, pid}
+    #  other -> other
+    #end
   end
 
   @spec get(Session.call_id()) :: {:ok, Session.t()} | :error
