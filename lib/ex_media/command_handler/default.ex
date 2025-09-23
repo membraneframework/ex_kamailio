@@ -64,14 +64,14 @@ defmodule ExMedia.CommandHandler.Default do
     {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
     Logger.debug("remote #{inspect remote}, pts = #{inspect pts}, dir = #{inspect dir}")
 
-    with {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
+    with {:ok, {rtp, rtcp, rtp_sock, _rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
       sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
       Logger.info(%{callid: call_id, offer: %{"from-tag" => from_tag, "rtp port" => rtp}})
       sess = %{
         call_id: call_id,
         from_tag: from_tag,
         state: :offered,
-        offer: %{remote: remote_offer, local: {state.media_ip, rtp}}
+        offer: %{remote: remote_offer, local: {state.media_ip, rtp, rtp_sock}}
       }
       case ExMedia.Membrane.Pipeline.create(call_id) do
         {:ok, sup_pid, pipeline_pid} ->
@@ -114,12 +114,13 @@ defmodule ExMedia.CommandHandler.Default do
               {:inet.ntoa(ip) |> to_string(), port}
             end)
         {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
-        {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} = PortPool.checkout({call_id, from_tag})
+        {:ok, {rtp, rtcp, rtp_sock, _rtcp_sock}} = PortPool.checkout({call_id, from_tag})
         sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
         reply = Bento.encode!(%{result: "ok", sdp: sdp})
         new_sess =
           sess
-          |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip,rtp}})
+          |> Map.put(:state, :answered)
+          |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip, rtp, rtp_sock}})
         :ok = ExMedia.SessionTable.put_session(new_sess)
         {:reply, reply, state}
       :nil ->
@@ -133,6 +134,7 @@ defmodule ExMedia.CommandHandler.Default do
     case ExMedia.SessionTable.get_session(call_id) do
       sess when is_map(sess) ->
         :ok = ExMedia.SessionTable.delete(call_id)
+        :ok = release_ports(sess)
         {:reply, Bento.encode!(%{result: "ok"}), state}
       :nil ->
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
@@ -140,6 +142,19 @@ defmodule ExMedia.CommandHandler.Default do
     end
   end
 
+  defp release_ports(%{state: :offered, call_id: call_id, from_tag: ftag} = sess) do
+    port = elem(sess.offer.local, 1)
+    sock = elem(sess.offer.local, 2)
+    :ok = PortPool.release({call_id, ftag}, {port, sock})
+  end
+  defp release_ports(%{state: :answered, call_id: call_id, from_tag: ftag} = sess) do
+    oport = elem(sess.offer.local, 1)
+    osock = elem(sess.offer.local, 2)
+    aport = elem(sess.answer.local, 1)
+    asock = elem(sess.answer.local, 2)
+    :ok = PortPool.release({call_id, ftag}, {oport, osock})
+    :ok = PortPool.release({call_id, ftag}, {aport, asock})
+  end
 
   defp fetch(map, keys, default), do: Enum.find_value(keys, default, &Map.get(map, &1))
 
