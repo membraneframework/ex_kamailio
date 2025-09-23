@@ -12,6 +12,7 @@ defmodule ExMedia.Pipeline do
   @type stop_reason :: :normal | :shutdown | :crash | atom() | {atom(), term()}
   @type error_reason :: term()
   @type pipeline_data :: map()
+  @type session :: map()
 
   @callback create(pipeline_id(), start_opts()) ::
               {:ok, pid()} | {:error, error_reason()}

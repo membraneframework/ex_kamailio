@@ -41,14 +41,31 @@ defmodule ExMedia.Membrane.Pipeline do
     :ok
   end
 
-  @spec update(Session.call_id(), (Session.t() | nil -> Session.t())) :: :ok
-  def update(id, fun) when is_function(fun, 1) do
-    # Simple, safe pattern: read current, compute new, insert
-    current = case :ets.lookup(@table, id) do
-      [{^id, s}] -> s
-      [] -> nil
-    end
-    :ets.insert(@table, {id, fun.(current)})
+  @spec update(Pipeline.session(), pipeline_direction()) :: :ok
+  def update(%{pipeline_pid: pid} = sess, :vendor) do
+
+    ## Simple, safe pattern: read current, compute new, insert
+    #current = case :ets.lookup(@table, id) do
+    #  [{^id, s}] -> s
+    #  [] -> nil
+    #end
+    #:ets.insert(@table, {id, fun.(current)})
+    :ok
+  end
+  def update(%{pipeline_pid: pid} = sess, :client) do
+    :ok = ShineMembranePipeline.setup_client_endpoint(
+      pid,
+      elem(sess.offer.local, 0),
+      elem(sess.offer.local, 1),
+      elem(hd(sess.offer.remote), 0),
+      elem(hd(sess.offer.remote), 1)
+    )
+    ## Simple, safe pattern: read current, compute new, insert
+    #current = case :ets.lookup(@table, id) do
+    #  [{^id, s}] -> s
+    #  [] -> nil
+    #end
+    #:ets.insert(@table, {id, fun.(current)})
     :ok
   end
 

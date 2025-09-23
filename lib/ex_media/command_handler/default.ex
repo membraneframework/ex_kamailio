@@ -65,7 +65,6 @@ defmodule ExMedia.CommandHandler.Default do
     {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
     Logger.debug("remote #{inspect remote}, pts = #{inspect pts}, dir = #{inspect dir}")
 
-
     with {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} <- PortPool.checkout({call_id, from_tag}) do
       sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
       Logger.info(%{callid: call_id, offer: %{"from-tag" => from_tag, "rtp port" => rtp}})
@@ -75,15 +74,14 @@ defmodule ExMedia.CommandHandler.Default do
         state: :offered,
         offer: %{remote: remote_offer, local: {state.media_ip, rtp}}
       }
-      #IO.inspect(sess)o
-      #res = ExMedia.Membrane.Pipeline.create(call_id)
       case ExMedia.Membrane.Pipeline.create(call_id) do
         {:ok, sup_pid, pipeline_pid} ->
-          sess
-          |> Map.put(:pipeline_pid, pipeline_pid)
+          new_sess = sess
+          |> Map.put(:pipeline_pid,  pipeline_pid)
           |> Map.put(:pipeline_sup_pid, sup_pid)
-          Logger.info(%{call: call_id, session: sess})
-          :ok = ExMedia.SessionTable.put_session(sess)
+          Logger.info(%{call: call_id, session: new_sess})
+          :ok = ExMedia.SessionTable.put_session(new_sess)
+          :ok = ExMedia.Membrane.Pipeline.update(new_sess, :client)
           reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
           {:reply, reply, state}
         other ->
@@ -91,7 +89,9 @@ defmodule ExMedia.CommandHandler.Default do
           {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
       end
     else
-      {:error, reason} -> {:error, reason, state}
+      {error, reason} ->
+        Logger.error(%{call: call_id, port_checkout_error: reason})
+        {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "port pool exhausted"}), state}
     end
   end
 
@@ -118,12 +118,16 @@ defmodule ExMedia.CommandHandler.Default do
         {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} = PortPool.checkout({call_id, from_tag})
         sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
         reply = Bento.encode!(%{result: "ok", sdp: sdp})
-        ExMedia.SessionTable.update_session(
-          call_id,
-          fn sess ->
-            Map.put(sess, :answer, %{remote: remote_answer, local: {state.media_ip, rtp}})
-          end
-        )
+        # kamailio
+        new_sess = sess
+                   |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip,rtp}})
+        ExMedia.SessionTable.put_session(new_sess)
+        #ExMedia.SessionTable.update_session(
+        #  call_id,
+        #  fn sess ->
+        #    Map.put(sess, :answer, %{remote: remote_answer, local: {state.media_ip, rtp}})
+        #  end
+        #)
         {:reply, reply, state}
       :nil ->
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
