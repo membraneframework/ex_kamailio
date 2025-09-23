@@ -12,21 +12,19 @@ defmodule ExMedia.Membrane.Pipeline do
 
   @spec create(Pipeline.pipeline_id()) :: :ok
   def create(pipeline_id) do
-    ShineMembranePipeline.start_link()
-    #spec = %{
-    #  id: pipeline_id,
-    #  start: {ShineMembranePipeline, :start_link,
-    #         [ShineMembranePipeline, [], [name: via(pipeline_id)]]} ,
-    #  restart: :temporary,   # don't restart finished calls
-    #  shutdown: 5_000,
-    #  type: :worker
-    #}
+    spec = %{
+      id: pipeline_id,
+      start: {ShineMembranePipeline, :start_link, [name: via(pipeline_id)]} ,
+      restart: :temporary,   # don't restart finished calls
+      shutdown: 5_000,
+      type: :worker
+    }
 
-    #case DynamicSupervisor.start_child(ExMedia.PipelineSupervisor, spec) do
-    #  {:ok, pid} -> {:ok, pid}
-    #  {:error, {:already_started, pid}} -> {:ok, pid}
-    #  other -> other
-    #end
+    case DynamicSupervisor.start_child(ExMedia.PipelineSupervisor, spec) do
+      {:ok, sup_pid, pid} -> {:ok, sup_pid, pid}
+      #{:error, {:already_started, pid}} -> {:ok, pid}
+      {:error, error} -> {:error, error}
+    end
   end
 
   @spec get(Session.call_id()) :: {:ok, Session.t()} | :error

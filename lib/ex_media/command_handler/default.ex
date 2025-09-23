@@ -76,14 +76,20 @@ defmodule ExMedia.CommandHandler.Default do
         offer: %{remote: remote_offer, local: {state.media_ip, rtp}}
       }
       #IO.inspect(sess)o
-      res = ExMedia.Membrane.Pipeline.create(call_id)
-      Logger.info("RES = #{inspect res}")
-      :ok = ExMedia.SessionTable.put_session(sess)
-
-
-
-      reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
-      {:reply, reply, state}
+      #res = ExMedia.Membrane.Pipeline.create(call_id)
+      case ExMedia.Membrane.Pipeline.create(call_id) do
+        {:ok, sup_pid, pipeline_pid} ->
+          sess
+          |> Map.put(:pipeline_pid, pipeline_pid)
+          |> Map.put(:pipeline_sup_pid, sup_pid)
+          Logger.info(%{call: call_id, session: sess})
+          :ok = ExMedia.SessionTable.put_session(sess)
+          reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
+          {:reply, reply, state}
+        other ->
+          Logger.error(%{call: call_id, pipeline_error: other})
+          {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
+      end
     else
       {:error, reason} -> {:error, reason, state}
     end
