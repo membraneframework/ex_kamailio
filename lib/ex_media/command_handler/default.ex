@@ -42,7 +42,6 @@ defmodule ExMedia.CommandHandler.Default do
 
 
   # -- routing --
-  #defp route(%{command: c} = cmd, state) when is_binary(c), do: route(%{cmd | command: String.to_atom(c)}, state)
   defp route(%{"command" => "offer"} = cmd, s), do: do_offer(cmd, s)
   defp route(%{"command" => "answer"} = cmd, s), do: do_answer(cmd, s)
   defp route(%{"command" => "delete"} = cmd, s), do: do_delete(cmd, s)
@@ -89,7 +88,7 @@ defmodule ExMedia.CommandHandler.Default do
           {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
       end
     else
-      {error, reason} ->
+      {:error, reason} ->
         Logger.error(%{call: call_id, port_checkout_error: reason})
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "port pool exhausted"}), state}
     end
@@ -118,16 +117,10 @@ defmodule ExMedia.CommandHandler.Default do
         {:ok, {rtp, rtcp, _rtp_sock, _rtcp_sock}} = PortPool.checkout({call_id, from_tag})
         sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
         reply = Bento.encode!(%{result: "ok", sdp: sdp})
-        # kamailio
-        new_sess = sess
-                   |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip,rtp}})
-        ExMedia.SessionTable.put_session(new_sess)
-        #ExMedia.SessionTable.update_session(
-        #  call_id,
-        #  fn sess ->
-        #    Map.put(sess, :answer, %{remote: remote_answer, local: {state.media_ip, rtp}})
-        #  end
-        #)
+        new_sess =
+          sess
+          |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip,rtp}})
+        :ok = ExMedia.SessionTable.put_session(new_sess)
         {:reply, reply, state}
       :nil ->
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}

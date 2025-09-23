@@ -1,5 +1,6 @@
 defmodule ExMedia.Membrane.Pipeline do
   alias ExMedia.Pipeline
+  alias ExMedia.Utils
 
   @type pipeline_direction :: :client | :vendor
   @registry ExMedia.PipelineRegistry
@@ -20,70 +21,34 @@ defmodule ExMedia.Membrane.Pipeline do
       type: :worker
     }
 
-    case DynamicSupervisor.start_child(ExMedia.PipelineSupervisor, spec) do
+    case DynamicSupervisor.start_child(@sup, spec) do
       {:ok, sup_pid, pid} -> {:ok, sup_pid, pid}
-      #{:error, {:already_started, pid}} -> {:ok, pid}
       {:error, error} -> {:error, error}
     end
   end
 
-  @spec get(Session.call_id()) :: {:ok, Session.t()} | :error
-  def get(id) do
-    case :ets.lookup(@table, id) do
-      [{^id, s}] -> {:ok, s}
-      [] -> :error
-    end
-  end
-
-  @spec delete(Session.call_id()) :: :ok
-  def delete(id) do
-    :ets.delete(@table, id)
-    :ok
+  @spec delete(Pipeline.pipeline_id()) :: :ok
+  def delete(pid) do
+    DynamicSupervisor.terminate_child(@sup, pid)
   end
 
   @spec update(Pipeline.session(), pipeline_direction()) :: :ok
   def update(%{pipeline_pid: pid} = sess, :vendor) do
-
-    ## Simple, safe pattern: read current, compute new, insert
-    #current = case :ets.lookup(@table, id) do
-    #  [{^id, s}] -> s
-    #  [] -> nil
-    #end
-    #:ets.insert(@table, {id, fun.(current)})
-    :ok
+    :ok = ShineMembranePipeline.setup_vendor_endpoint(
+      pid,
+      Utils.parse_ip!(elem(sess.answer.local, 0)),
+      elem(sess.answer.local, 1),
+      Utils.parse_ip!(elem(hd(sess.answer.remote), 0)),
+      elem(hd(sess.answer.remote), 1)
+    )
   end
   def update(%{pipeline_pid: pid} = sess, :client) do
     :ok = ShineMembranePipeline.setup_client_endpoint(
       pid,
-      elem(sess.offer.local, 0),
+      Utils.parse_ip!(elem(sess.offer.local, 0)),
       elem(sess.offer.local, 1),
-      elem(hd(sess.offer.remote), 0),
+      Utils.parse_ip!(elem(hd(sess.offer.remote), 0)),
       elem(hd(sess.offer.remote), 1)
     )
-    ## Simple, safe pattern: read current, compute new, insert
-    #current = case :ets.lookup(@table, id) do
-    #  [{^id, s}] -> s
-    #  [] -> nil
-    #end
-    #:ets.insert(@table, {id, fun.(current)})
-    :ok
-  end
-
-  @spec all() :: [Session.t()]
-  def all, do: :ets.tab2list(@table) |> Enum.map(fn {_id, s} -> s end)
-
-  # ——— GenServer ———
-
-  @impl true
-  def init(_opts) do
-    :ets.new(@table, [
-      :set,
-      :named_table,
-      :protected,                 # anyone can read; only owner writes
-      read_concurrency: true,
-      write_concurrency: true
-      # , :compressed               # optional: saves memory, slower CPU
-    ])
-  create{:ok, %{}}
   end
 end
