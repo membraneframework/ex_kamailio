@@ -63,7 +63,7 @@ defmodule ExMedia.SDPAdapter do
 
     dir =
       attributes
-      |> Enum.map(&to_string/1)
+      |> Enum.map(&attr_to_string/1)
       |> Enum.find(fn s -> String.starts_with?(s, "a=") && String.replace_prefix(s, "a=", "") in ["sendrecv","sendonly","recvonly","inactive"] end)
       |> case do
             nil -> nil
@@ -73,6 +73,13 @@ defmodule ExMedia.SDPAdapter do
 
 
     {fmt, dir}
+  end
+
+  defp attr_to_string(t) when is_tuple(t) do
+    ""
+  end
+  defp attr_to_string(r) do
+    to_string(r)
   end
 
   defp intersect_pts(remote_pts, allowed) do

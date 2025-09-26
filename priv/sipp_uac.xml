@@ -44,6 +44,8 @@
       t=0 0
       m=audio 50000 RTP/AVP 0
       a=rtpmap:0 PCMU/8000
+      a=ptime:20
+      a=maxptime:150
 
     ]]>
   </send>
