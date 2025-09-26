@@ -6,7 +6,7 @@ defmodule ExMedia.PortPool do
   ## API
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   def checkout(key), do: GenServer.call(__MODULE__, {:checkout, key})
-  def release(key, {rtp, _rtcp}), do: GenServer.call(__MODULE__, {:release, key, rtp})
+  def release(key, rtp), do: GenServer.call(__MODULE__, {:release, key, rtp})
 
 
   ## Server
@@ -24,15 +24,11 @@ defmodule ExMedia.PortPool do
       {{:value, base}, q2} ->
         rtp = base
         rtcp = base + 1
-        with {:ok, rtp_sock} <- open_udp(rtp, s.ip),
-             {:ok, rtcp_sock} <- open_udp(rtcp, s.ip) do
-          alloc = Map.put(s.allocated, key, %{rtp: rtp, rtcp: rtcp, rtp_sock: rtp_sock, rtcp_sock: rtcp_sock})
-          {:reply, {:ok, {rtp, rtcp, rtp_sock, rtcp_sock}}, %{s | available: q2, allocated: alloc}}
-        else
-          {:error, _} = e -> {:reply, e, %{s | available: :queue.in_r(base, q2)}}
-        end
-      {_, _} -> {:reply, {:error, :no_ports}, s}
-end
+        alloc = Map.put(s.allocated, key, %{rtp: rtp, rtcp: rtcp})
+        {:reply, {:ok, {rtp, rtcp}}, %{s | available: q2, allocated: alloc}}
+      {_, _} ->
+        {:reply, {:error, :no_ports}, s}
+    end
 end
 
 
@@ -42,16 +38,10 @@ end
   end
 
 
-  defp open_udp(port, ip) do
-    opts = [:binary, {:ip, parse_ip(ip)}, {:active, false}, {:reuseaddr, true}]
-    :gen_udp.open(port, opts)
-  end
-
-
-  defp parse_ip(str) do
-    case :inet.parse_address(String.to_charlist(str)) do
-      {:ok, ip} -> ip
-      _ -> {127,0,0,1}
-    end
-  end
+  #defp parse_ip(str) do
+  #  case :inet.parse_address(String.to_charlist(str)) do
+  #    {:ok, ip} -> ip
+  #    _ -> {127,0,0,1}
+  #  end
+  #end
 end

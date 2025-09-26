@@ -1,6 +1,7 @@
 defmodule ExMedia.Membrane.Pipeline do
   alias ExMedia.Pipeline
   alias ExMedia.Utils
+  require Logger
 
   @type pipeline_direction :: :client | :vendor
   @registry ExMedia.PipelineRegistry
@@ -34,6 +35,7 @@ defmodule ExMedia.Membrane.Pipeline do
 
   @spec update(Pipeline.session(), pipeline_direction()) :: :ok
   def update(%{pipeline_pid: pid} = sess, :vendor) do
+    Logger.debug(%{call: pid, vendor_side_data: sess})
     :ok = ShineMembranePipeline.setup_vendor_endpoint(
       pid,
       Utils.parse_ip!(elem(sess.answer.local, 0)),
@@ -43,6 +45,7 @@ defmodule ExMedia.Membrane.Pipeline do
     )
   end
   def update(%{pipeline_pid: pid} = sess, :client) do
+    Logger.debug(%{call: pid, client_side_data: sess})
     :ok = ShineMembranePipeline.setup_client_endpoint(
       pid,
       Utils.parse_ip!(elem(sess.offer.local, 0)),
