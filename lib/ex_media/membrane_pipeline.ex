@@ -5,7 +5,7 @@ defmodule ExMedia.Membrane.Pipeline do
 
   @type pipeline_direction :: :client | :vendor
   @registry ExMedia.PipelineRegistry
-  @sup      ExMedia.PipelineSupervisor
+  @sup ExMedia.PipelineSupervisor
 
   # Use this wherever you need to name / find the pipeline process
   def via(id), do: {:via, Registry, {@registry, id}}
@@ -16,8 +16,9 @@ defmodule ExMedia.Membrane.Pipeline do
   def create(pipeline_id) do
     spec = %{
       id: pipeline_id,
-      start: {ShineMembranePipeline, :start_link, [name: via(pipeline_id)]} ,
-      restart: :temporary,   # don't restart finished calls
+      start: {ShineMembranePipeline, :start_link, [name: via(pipeline_id)]},
+      # don't restart finished calls
+      restart: :temporary,
       shutdown: 5_000,
       type: :worker
     }
@@ -36,22 +37,43 @@ defmodule ExMedia.Membrane.Pipeline do
   @spec update(Pipeline.session(), pipeline_direction()) :: :ok
   def update(%{pipeline_pid: pid} = sess, :vendor) do
     Logger.debug(%{call: pid, vendor_side_data: sess})
-    :ok = ShineMembranePipeline.setup_vendor_endpoint(
-      pid,
-      Utils.parse_ip!(elem(sess.answer.local, 0)),
-      elem(sess.answer.local, 1),
-      Utils.parse_ip!(elem(hd(sess.answer.remote), 0)),
-      elem(hd(sess.answer.remote), 1)
-    )
+
+    Logger.debug("""
+    Setting up vendor Membrane endpoint \
+    (local ip: #{inspect(Utils.parse_ip!(elem(sess.answer.local, 0)))} \
+    port: #{inspect(elem(sess.answer.local, 1))} <-> \
+    remote ip: #{inspect(Utils.parse_ip!(elem(hd(sess.answer.remote), 0)))} \
+    port: #{inspect(elem(hd(sess.answer.remote), 1))})
+    """)
+
+    :ok =
+      ShineMembranePipeline.setup_vendor_endpoint(
+        pid,
+        Utils.parse_ip!(elem(sess.answer.local, 0)),
+        elem(sess.answer.local, 1),
+        Utils.parse_ip!(elem(hd(sess.answer.remote), 0)),
+        elem(hd(sess.answer.remote), 1)
+      )
   end
+
   def update(%{pipeline_pid: pid} = sess, :client) do
     Logger.debug(%{call: pid, client_side_data: sess})
-    :ok = ShineMembranePipeline.setup_client_endpoint(
-      pid,
-      Utils.parse_ip!(elem(sess.offer.local, 0)),
-      elem(sess.offer.local, 1),
-      Utils.parse_ip!(elem(hd(sess.offer.remote), 0)),
-      elem(hd(sess.offer.remote), 1)
-    )
+
+    Logger.debug("""
+    Setting up client Membrane endpoint \
+    (local ip: #{inspect(Utils.parse_ip!(elem(sess.offer.local, 0)))} \
+    port: #{inspect(elem(sess.offer.local, 1))} <-> \
+    remote ip: #{inspect(Utils.parse_ip!(elem(hd(sess.offer.remote), 0)))} \
+    port: #{inspect(elem(hd(sess.offer.remote), 1))})
+    """)
+
+    :ok =
+      ShineMembranePipeline.setup_client_endpoint(
+        pid,
+        Utils.parse_ip!(elem(sess.offer.local, 0)),
+        elem(sess.offer.local, 1),
+        Utils.parse_ip!(elem(hd(sess.offer.remote), 0)),
+        elem(hd(sess.offer.remote), 1)
+      )
   end
 end
