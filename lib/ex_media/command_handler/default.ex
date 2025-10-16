@@ -54,7 +54,9 @@ defmodule ExMedia.CommandHandler.Default do
     from_tag = fetch(cmd, ["from-tag"], "ftag")
 
 
-    remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
+    offer_sdp = Map.get(cmd, :sdp) || Map.get(cmd, "sdp")
+    remote = SDPAdapter.parse(offer_sdp)
+    Logger.debug("offer_sdp: #{inspect offer_sdp}")
     remote_offer =
       Enum.map(remote.media,
         fn %ExSDP.Media{port: port, connection_data: %{address: ip}} ->
@@ -106,8 +108,10 @@ defmodule ExMedia.CommandHandler.Default do
 
 
     case ExMedia.SessionTable.get_session(call_id) do
-      sess when is_map(sess) ->
-        remote = SDPAdapter.parse(Map.get(cmd, :sdp) || Map.get(cmd, "sdp"))
+      %{state: :offered} = sess when is_map(sess) ->
+        answer_sdp = Map.get(cmd, :sdp) || Map.get(cmd, "sdp")
+        remote = SDPAdapter.parse(answer_sdp)
+        Logger.debug("answer_sdp: #{inspect answer_sdp}")
         remote_answer =
           Enum.map(remote.media,
             fn %ExSDP.Media{port: port, connection_data: %{address: ip}} ->
@@ -121,7 +125,11 @@ defmodule ExMedia.CommandHandler.Default do
           sess
           |> Map.put(:state, :answered)
           |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip, rtp}})
+          |> Map.put(:reply, reply)
         :ok = ExMedia.SessionTable.put_session(new_sess)
+        :ok = ExMedia.Membrane.Pipeline.update(new_sess, :vendor)
+        {:reply, reply, state}
+      %{reply: reply} = sess when is_map(sess) ->
         {:reply, reply, state}
       :nil ->
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
