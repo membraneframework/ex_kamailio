@@ -84,6 +84,7 @@ defmodule ExMedia.CommandHandler.Default do
           :ok = ExMedia.SessionTable.put_session(new_sess)
           :ok = ExMedia.Membrane.Pipeline.update(new_sess, :client)
           reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
+          Logger.debug(%{call: call_id, stage: :offer, reply: reply})
           {:reply, reply, state}
         other ->
           Logger.error(%{call: call_id, pipeline_error: other})
