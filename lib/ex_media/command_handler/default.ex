@@ -30,16 +30,13 @@ defmodule ExMedia.CommandHandler.Default do
     }
   end
 
-
   @impl true
   def handle_call({:command, cmd}, _from, state) do
-    #IO.inspect(cmd)
     case route(cmd, state) do
       {:reply, io, st} -> {:reply, {:ok, IO.iodata_to_binary(io)}, st}
       {:error, reason, st} -> {:reply, {:error, reason}, st}
     end
   end
-
 
   # -- routing --
   defp route(%{"command" => "offer"} = cmd, s), do: do_offer(cmd, s)
@@ -52,7 +49,6 @@ defmodule ExMedia.CommandHandler.Default do
   defp do_offer(cmd, state) do
     call_id = fetch(cmd, ["call-id"], "unknown")
     from_tag = fetch(cmd, ["from-tag"], "ftag")
-
 
     offer_sdp = Map.get(cmd, :sdp) || Map.get(cmd, "sdp")
     remote = SDPAdapter.parse(offer_sdp)
@@ -105,9 +101,7 @@ defmodule ExMedia.CommandHandler.Default do
     from_tag = fetch(cmd, ["from-tag"], "ftag")
     to_tag = fetch(cmd, ["to-tag"], "ftag")
 
-    #Logger.debug(%{state: state})
     Logger.info(%{callid: call_id, answer: %{"from-tag" => from_tag, "to-tag" => to_tag}})
-
 
     case ExMedia.SessionTable.get_session(call_id) do
       %{state: :offered} = sess when is_map(sess) ->
@@ -123,20 +117,18 @@ defmodule ExMedia.CommandHandler.Default do
         {media_ip, rtp_port} = sess.client_side.local
         sdp = SDPAdapter.answer_sdp(media_ip, rtp_port, rtp_port + 1, pts, dir)
         reply = Bento.encode!(%{result: "ok", sdp: sdp})
-        local = sess.vendor_side.local
         new_sess =
           sess
           |> Map.put(:state, :answered)
-          |> Map.put(:vendor_side, %{local: local, remote: remote_answer})
+          |> Map.put(:vendor_side, %{local: sess.vendor_side.local, remote: remote_answer})
           |> Map.put(:reply, reply)
         :ok = ExMedia.SessionTable.put_session(new_sess)
         :ok = ExMedia.Membrane.Pipeline.update(new_sess, :vendor)
         {:reply, reply, state}
-      %{reply: reply} = sess when is_map(sess) ->
+      %{reply: reply} = sess when is_map(sess) -> #we have replied earlier
         {:reply, reply, state}
       :nil ->
         {:reply, Bento.encode!(%{"result" => "error", "error-reason" => "unknown call"}), state}
-
     end
   end
 
