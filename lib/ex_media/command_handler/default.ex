@@ -64,26 +64,27 @@ defmodule ExMedia.CommandHandler.Default do
         end)
 
     {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
-    Logger.debug("remote #{inspect remote}, pts = #{inspect pts}, dir = #{inspect dir}")
+    Logger.info("remote #{inspect remote}, pts = #{inspect pts}, dir = #{inspect dir}")
 
-    with {:ok, {rtp, rtcp}} <- PortPool.checkout({call_id, from_tag}) do
-      sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
-      Logger.info(%{callid: call_id, offer: %{"from-tag" => from_tag, "local rtp port" => rtp}})
+    with {:ok, {rtp_client_port, rtp_vendor_port}} <- PortPool.checkout({call_id, from_tag}) do
+      sdp = SDPAdapter.answer_sdp(state.media_ip, rtp_vendor_port, rtp_vendor_port + 1, pts, dir)
       sess = %{
         call_id: call_id,
         from_tag: from_tag,
         state: :offered,
-        offer: %{remote: remote_offer, local: {state.media_ip, rtp}}
+        client_side:  %{remote: remote_offer, local: {state.media_ip, rtp_client_port}},
+        vendor_side: %{local: {state.media_ip, rtp_vendor_port}}
       }
       case ExMedia.Membrane.Pipeline.create(call_id) do
         {:ok, sup_pid, pipeline_pid} ->
-          new_sess = sess
-          |> Map.put(:pipeline_pid,  pipeline_pid)
-          |> Map.put(:pipeline_sup_pid, sup_pid)
+          new_sess =
+            sess
+            |> Map.put(:pipeline_pid,  pipeline_pid)
+            |> Map.put(:pipeline_sup_pid, sup_pid)
           Logger.info(%{call: call_id, pipeline_launch_status: :ok, session: new_sess})
           :ok = ExMedia.SessionTable.put_session(new_sess)
           :ok = ExMedia.Membrane.Pipeline.update(new_sess, :client)
-          reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp, rtcp_port: rtcp})
+          reply = Bento.encode!(%{result: "ok", sdp: sdp, rtp_port: rtp_vendor_port, rtcp_port: rtp_vendor_port + 1})
           Logger.debug(%{call: call_id, stage: :offer, reply: reply})
           {:reply, reply, state}
         other ->
@@ -119,13 +120,14 @@ defmodule ExMedia.CommandHandler.Default do
               {:inet.ntoa(ip) |> to_string(), port}
             end)
         {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
-        {:ok, {rtp, rtcp}} = PortPool.checkout({call_id, from_tag})
-        sdp = SDPAdapter.answer_sdp(state.media_ip, rtp, rtcp, pts, dir)
+        {media_ip, rtp_port} = sess.client_side.local
+        sdp = SDPAdapter.answer_sdp(media_ip, rtp_port, rtp_port + 1, pts, dir)
         reply = Bento.encode!(%{result: "ok", sdp: sdp})
+        local = sess.vendor_side.local
         new_sess =
           sess
           |> Map.put(:state, :answered)
-          |> Map.put(:answer, %{remote: remote_answer, local: {state.media_ip, rtp}})
+          |> Map.put(:vendor_side, %{local: local, remote: remote_answer})
           |> Map.put(:reply, reply)
         :ok = ExMedia.SessionTable.put_session(new_sess)
         :ok = ExMedia.Membrane.Pipeline.update(new_sess, :vendor)
@@ -152,12 +154,12 @@ defmodule ExMedia.CommandHandler.Default do
   end
 
   defp release_ports(%{state: :offered, call_id: call_id, from_tag: ftag} = sess) do
-    port = elem(sess.offer.local, 1)
+    port = elem(sess.client_side.local, 1)
     :ok = PortPool.release({call_id, ftag}, port)
   end
   defp release_ports(%{state: :answered, call_id: call_id, from_tag: ftag} = sess) do
-    offer_port = elem(sess.offer.local, 1)
-    answer_port = elem(sess.answer.local, 1)
+    offer_port = elem(sess.client_side.local, 1)
+    answer_port = elem(sess.vendor_side.local, 1)
     :ok = PortPool.release({call_id, ftag}, offer_port)
     :ok = PortPool.release({call_id, ftag}, answer_port)
   end

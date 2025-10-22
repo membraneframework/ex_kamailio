@@ -18,18 +18,34 @@ defmodule ExMedia.PortPool do
   end
 
 
-  @impl true
   def handle_call({:checkout, key}, _from, %{available: q} = s) do
     case :queue.out(q) do
-      {{:value, base}, q2} ->
-        rtp = base
-        rtcp = base + 1
-        alloc = Map.put(s.allocated, key, %{rtp: rtp, rtcp: rtcp})
-        {:reply, {:ok, {rtp, rtcp}}, %{s | available: q2, allocated: alloc}}
-      {_, _} ->
-        {:reply, {:error, :no_ports}, s}
+      {{:value, rtp1}, q2} ->
+        case :queue.out(q2) do
+          {{:value, rtp2}, q3} ->
+            alloc = Map.put(s.allocated, key, %{rtp: {rtp1, rtp2}})
+            {:reply, {:ok, {rtp1, rtp2}}, %{s | available: q3, allocated: alloc}}
+          {_, _} ->
+            # not enough ports left; put the first one back
+            {:reply, {:error, :no_ports}, s}
+        end
+        {_, _} ->
+          {:reply, {:error, :no_ports}, s}
     end
-end
+  end
+
+  #@impl true
+  #def handle_call({:checkout, key}, _from, %{available: q} = s) do
+  #  case :queue.out(q) do
+  #    {{:value, base}, q2} ->
+  #      rtp = base
+  #      rtcp = base + 1
+  #      alloc = Map.put(s.allocated, key, %{rtp: rtp, rtcp: rtcp})
+  #      {:reply, {:ok, {rtp, rtcp}}, %{s | available: q2, allocated: alloc}}
+  #    {_, _} ->
+  #      {:reply, {:error, :no_ports}, s}
+  #  end
+  #end
 
 
   @impl true

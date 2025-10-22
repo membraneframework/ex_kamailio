@@ -42,7 +42,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio 50000 RTP/AVP 0
+      m=audio [media_port] RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=ptime:20
       a=maxptime:150
@@ -91,7 +91,7 @@
   <!-- Play RTP WAV after ACK -->
   <nop>
     <action>
-      <exec rtp_stream="pcmu.wav"/>
+      <exec play_pcap_audio="pcmu.pcap" rtp_payload_type="0"/>
     </action>
   </nop>
 

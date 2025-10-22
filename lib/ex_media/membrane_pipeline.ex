@@ -40,19 +40,19 @@ defmodule ExMedia.Membrane.Pipeline do
 
     Logger.debug("""
     Setting up vendor Membrane endpoint \
-    (local ip: #{inspect(Utils.parse_ip!(elem(sess.answer.local, 0)))} \
-    port: #{inspect(elem(sess.answer.local, 1))} <-> \
-    remote ip: #{inspect(Utils.parse_ip!(elem(hd(sess.answer.remote), 0)))} \
-    port: #{inspect(elem(hd(sess.answer.remote), 1))})
+    (local ip: #{inspect(Utils.parse_ip!(elem(sess.vendor_side.local, 0)))} \
+    port: #{inspect(elem(sess.vendor_side.local, 1))} <-> \
+    remote ip: #{inspect(Utils.parse_ip!(elem(hd(sess.vendor_side.remote), 0)))} \
+    port: #{inspect(elem(hd(sess.vendor_side.remote), 1))})
     """)
 
     :ok =
       ShineMembranePipeline.setup_vendor_endpoint(
         pid,
-        Utils.parse_ip!(elem(sess.answer.local, 0)),
-        elem(sess.answer.local, 1),
-        Utils.parse_ip!(elem(hd(sess.answer.remote), 0)),
-        elem(hd(sess.answer.remote), 1)
+        Utils.parse_ip!(elem(sess.vendor_side.local, 0)),
+        elem(sess.vendor_side.local, 1),
+        Utils.parse_ip!(elem(hd(sess.vendor_side.remote), 0)),
+        elem(hd(sess.vendor_side.remote), 1)
       )
   end
 
@@ -61,19 +61,19 @@ defmodule ExMedia.Membrane.Pipeline do
 
     Logger.debug("""
     Setting up client Membrane endpoint \
-    (local ip: #{inspect(Utils.parse_ip!(elem(sess.offer.local, 0)))} \
-    port: #{inspect(elem(sess.offer.local, 1))} <-> \
-    remote ip: #{inspect(Utils.parse_ip!(elem(hd(sess.offer.remote), 0)))} \
-    port: #{inspect(elem(hd(sess.offer.remote), 1))})
+    (local ip: #{inspect(Utils.parse_ip!(elem(sess.client_side.local, 0)))} \
+    port: #{inspect(elem(sess.client_side.local, 1))} <-> \
+    remote ip: #{inspect(Utils.parse_ip!(elem(hd(sess.client_side.remote), 0)))} \
+    port: #{inspect(elem(hd(sess.client_side.remote), 1))})
     """)
 
     :ok =
       ShineMembranePipeline.setup_client_endpoint(
         pid,
-        Utils.parse_ip!(elem(sess.offer.local, 0)),
-        elem(sess.offer.local, 1),
-        Utils.parse_ip!(elem(hd(sess.offer.remote), 0)),
-        elem(hd(sess.offer.remote), 1)
+        Utils.parse_ip!(elem(sess.client_side.local, 0)),
+        elem(sess.client_side.local, 1),
+        Utils.parse_ip!(elem(hd(sess.client_side.remote), 0)),
+        elem(hd(sess.client_side.remote), 1)
       )
   end
 end
