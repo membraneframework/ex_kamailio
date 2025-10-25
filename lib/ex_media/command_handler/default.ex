@@ -108,11 +108,20 @@ defmodule ExMedia.CommandHandler.Default do
         answer_sdp = Map.get(cmd, :sdp) || Map.get(cmd, "sdp")
         remote = SDPAdapter.parse(answer_sdp)
         Logger.debug("answer_sdp: #{inspect answer_sdp}")
+        Logger.info("remote_media: #{inspect remote.media}")
         remote_answer =
-          Enum.map(remote.media,
-            fn %ExSDP.Media{port: port, connection_data: %{address: ip}} ->
-              {:inet.ntoa(ip) |> to_string(), port}
-            end)
+          Enum.map(remote.media, fn
+            %ExSDP.Media{
+              port: port,
+              connection_data: [%ExSDP.ConnectionData{address: ip} | _]
+            } ->
+              {ip_to_string(ip), port}
+            %ExSDP.Media{
+              port: port,
+              connection_data: %ExSDP.ConnectionData{address: ip}
+            } ->
+              {ip_to_string(ip), port}
+          end)
         {pts, dir} = SDPAdapter.decide_media(remote, state.allowed_pts)
         {media_ip, rtp_port} = sess.client_side.local
         sdp = SDPAdapter.answer_sdp(media_ip, rtp_port, rtp_port + 1, pts, dir)
@@ -157,5 +166,10 @@ defmodule ExMedia.CommandHandler.Default do
   end
 
   defp fetch(map, keys, default), do: Enum.find_value(keys, default, &Map.get(map, &1))
+
+  defp ip_to_string({_,_,_,_}=ip), do: ip |> :inet.ntoa() |> to_string()
+  defp ip_to_string({_,_,_,_,_,_,_,_}=ip), do: ip |> :inet.ntoa() |> to_string()
+  defp ip_to_string(ip) when is_binary(ip), do: ip
+
 
 end
