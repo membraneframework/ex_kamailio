@@ -144,8 +144,9 @@ defmodule ExMedia.CommandHandler.Default do
   defp do_delete(cmd, state) do
     call_id = fetch(cmd, ["call-id"], "unknown")
     case ExMedia.SessionTable.get_session(call_id) do
-      sess when is_map(sess) ->
+      %{pipeline_sup_pid: pid} = sess when is_map(sess) ->
         :ok = ExMedia.SessionTable.delete(call_id)
+        :ok = ExMedia.Membrane.Pipeline.delete(pid)
         :ok = release_ports(sess)
         {:reply, Bento.encode!(%{result: "ok"}), state}
       :nil ->
