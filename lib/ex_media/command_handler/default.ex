@@ -146,7 +146,7 @@ defmodule ExMedia.CommandHandler.Default do
     case ExMedia.SessionTable.get_session(call_id) do
       %{pipeline_sup_pid: pid} = sess when is_map(sess) ->
         :ok = ExMedia.SessionTable.delete(call_id)
-        :ok = ExMedia.Membrane.Pipeline.delete(pid)
+        ExMedia.Membrane.Pipeline.delete(pid)
         :ok = release_ports(sess)
         {:reply, Bento.encode!(%{result: "ok"}), state}
       :nil ->
