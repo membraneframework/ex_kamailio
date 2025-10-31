@@ -12,7 +12,7 @@ defmodule ExMedia.Membrane.Pipeline do
 
   # ——— Public API ———
 
-  @spec create(Pipeline.pipeline_id()) :: :ok
+  @spec create(Pipeline.pipeline_id()) :: {:ok, pid(), pid()} | {:error, any()}
   def create(pipeline_id) do
     spec = %{
       id: pipeline_id,

@@ -12,7 +12,7 @@ defmodule ExMedia.SDPAdapter do
     try do
       case ExSDP.parse(text) do
         {:ok, sdp} -> sdp
-        %ExSDP{} = sdp -> sdp
+        #%ExSDP{} = sdp -> sdp
         {:error, error} -> {:error, error}
       end
     rescue

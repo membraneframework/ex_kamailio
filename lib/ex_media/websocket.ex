@@ -18,7 +18,7 @@ defmodule ExMedia.WebSocket do
       _ ->
         {:ok, bencode_error} = Bento.encode(%{"result" => "error", "error-reason" => "unsupported"})
         payload = IO.iodata_to_binary(bencode_error)
-        {:push, {:text, <<cookie, " ", payload>>}, state}
+        {:push, {:text, cookie <> " " <> payload}, state}
     end
   end
 
