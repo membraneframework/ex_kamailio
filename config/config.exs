@@ -6,7 +6,8 @@ config :ex_media,
   # Advertised/local IP for SDP c= and a=rtcp. You can also detect at runtime.
   media_ip: System.get_env("MEDIA_IP", "192.168.36.76"),
   # Inclusive port range (will allocate even base for RTP, odd for RTCP)
-  port_range: 11000..40000
+  port_range: 11000..40000,
+  command_handler: ExMedia.CommandHandler.Default
 
 config :shine_membrane_pipeline,
   streams_in_batch: System.get_env("MEMBRANE_STREAMS_IN_BATCH", "8") |> String.to_integer(),

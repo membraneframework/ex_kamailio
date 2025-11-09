@@ -4,7 +4,8 @@ defmodule ExMedia.WebSocket do
 
   @impl true
   def init(_args) do
-    {:ok, pid} = ExMedia.CommandHandler.Default.start_link([])
+    {:ok, command_handler} = Application.fetch_env(:ex_media, :command_handler)
+    {:ok, pid} = command_handler.start_link([])
     {:ok, %{handler: pid}}
   end
 
