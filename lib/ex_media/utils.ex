@@ -1,5 +1,4 @@
 defmodule ExMedia.Utils do
-
   @moduledoc """
   Useful functions
   """

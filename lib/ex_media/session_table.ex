@@ -7,12 +7,16 @@ defmodule ExMedia.SessionTable do
   use GenServer
   require Logger
 
-  @table :exmedia_sessions         # primary by call-id
-  @idx_from_tag :exmedia_idx_from  # optional secondary index
-  @idx_to_tag   :exmedia_idx_to
+  # primary by call-id
+  @table :exmedia_sessions
+  # optional secondary index
+  @idx_from_tag :exmedia_idx_from
+  @idx_to_tag :exmedia_idx_to
 
   @public_opts [
-    :named_table, :public, :set,
+    :named_table,
+    :public,
+    :set,
     read_concurrency: true,
     write_concurrency: true
   ]
@@ -59,7 +63,7 @@ defmodule ExMedia.SessionTable do
     :ets.insert(@table, {call_id, touch(session)})
     # maintain secondary indices
     if from = session[:from_tag], do: :ets.insert(@idx_from_tag, {from, call_id})
-    if to   = session[:to_tag],   do: :ets.insert(@idx_to_tag,   {to,   call_id})
+    if to = session[:to_tag], do: :ets.insert(@idx_to_tag, {to, call_id})
     :ok
   end
 
@@ -72,7 +76,9 @@ defmodule ExMedia.SessionTable do
 
   def update_session(call_id, fun) when is_function(fun, 1) do
     case get_session(call_id) do
-      nil -> :error
+      nil ->
+        :error
+
       sess ->
         new = touch(fun.(sess))
         IO.inspect(new)
@@ -85,9 +91,11 @@ defmodule ExMedia.SessionTable do
     case :ets.take(@table, call_id) do
       [{^call_id, sess}] ->
         if from = sess[:from_tag], do: :ets.match_delete(@idx_from_tag, {from, :_})
-        if to   = sess[:to_tag],   do: :ets.match_delete(@idx_to_tag,   {to,   :_})
+        if to = sess[:to_tag], do: :ets.match_delete(@idx_to_tag, {to, :_})
         :ok
-      _ -> :ok
+
+      _ ->
+        :ok
     end
   end
 

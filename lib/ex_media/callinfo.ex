@@ -5,17 +5,18 @@ defmodule ExMedia.CallInfo do
   # One network endpoint (peer or local)
   defmodule Endpoint do
     @type ip4 :: {0..255, 0..255, 0..255, 0..255}
-    @type ip6 :: {0..65535, 0..65535, 0..65535, 0..65535,
-                  0..65535, 0..65535, 0..65535, 0..65535}
+    @type ip6 :: {0..65535, 0..65535, 0..65535, 0..65535, 0..65535, 0..65535, 0..65535, 0..65535}
     @type ip :: ip4 | ip6 | String.t()
 
     @type t :: %__MODULE__{
-            ip: ip,              # peer/local IP (tuple or string)
-            rtp_port: 1..65535,  # RTP port
+            # peer/local IP (tuple or string)
+            ip: ip,
+            # RTP port
+            rtp_port: 1..65535,
             rtcp_port: 1..65535 | nil
           }
 
-    defstruct ip: {0,0,0,0}, rtp_port: 0, rtcp_port: nil
+    defstruct ip: {0, 0, 0, 0}, rtp_port: 0, rtcp_port: nil
   end
 
   # A single RTP pipeline (directional)
@@ -24,8 +25,10 @@ defmodule ExMedia.CallInfo do
 
     @type t :: %__MODULE__{
             dir: direction,
-            peer: Endpoint.t(),   # client or vendor side
-            local: Endpoint.t()   # your box’s bound IP/ports
+            # client or vendor side
+            peer: Endpoint.t(),
+            # your box’s bound IP/ports
+            local: Endpoint.t()
           }
 
     defstruct dir: :in, peer: %Endpoint{}, local: %Endpoint{}

@@ -2,18 +2,18 @@ defmodule ExMedia.Router do
   use Plug.Router
   require Logger
 
-  plug :match
-  plug :dispatch
+  plug(:match)
+  plug(:dispatch)
 
   get "/health" do
     send_resp(conn, 200, "ok")
   end
 
-  #get "/rtpengine" do
+  # get "/rtpengine" do
   get "/" do
     # Upgrade to WebSocket using WebSock
     conn
-    |> WebSockAdapter.upgrade(ExMedia.WebSocket, %{}, [timeout: 6000000])
+    |> WebSockAdapter.upgrade(ExMedia.WebSocket, %{}, timeout: 6_000_000)
   end
 
   match _ do

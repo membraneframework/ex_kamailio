@@ -28,7 +28,8 @@ defmodule ExMedia.MixProject do
       {:jason, "~> 1.4"},
       {:bento, "~> 1.0"},
       {:plug, "~> 1.18"},
-      {:shine_membrane_pipeline, git: "https://gitlab.sonoc.io/shine/shine-membrane-pipeline.git", branch: "batching"}
+      {:shine_membrane_pipeline,
+       git: "https://gitlab.sonoc.io/shine/shine-membrane-pipeline.git", branch: "batching"}
     ]
   end
 end

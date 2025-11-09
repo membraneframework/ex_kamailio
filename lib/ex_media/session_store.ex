@@ -33,10 +33,12 @@ defmodule ExMedia.SessionStore do
   @spec upsert(Session.call_id(), (Session.t() | nil -> Session.t())) :: :ok
   def upsert(id, fun) when is_function(fun, 1) do
     # Simple, safe pattern: read current, compute new, insert
-    current = case :ets.lookup(@table, id) do
-      [{^id, s}] -> s
-      [] -> nil
-    end
+    current =
+      case :ets.lookup(@table, id) do
+        [{^id, s}] -> s
+        [] -> nil
+      end
+
     :ets.insert(@table, {id, fun.(current)})
     :ok
   end
@@ -51,11 +53,13 @@ defmodule ExMedia.SessionStore do
     :ets.new(@table, [
       :set,
       :named_table,
-      :protected,                 # anyone can read; only owner writes
+      # anyone can read; only owner writes
+      :protected,
       read_concurrency: true,
       write_concurrency: true
       # , :compressed               # optional: saves memory, slower CPU
     ])
+
     {:ok, %{}}
   end
 end

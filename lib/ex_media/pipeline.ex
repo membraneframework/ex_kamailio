@@ -25,5 +25,4 @@ defmodule ExMedia.Pipeline do
 
   @callback get(pipeline_id()) ::
               {:ok, pipeline_data()} | {:error, error_reason()}
-
 end

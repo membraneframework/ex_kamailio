@@ -8,13 +8,14 @@ defmodule ExMedia.Application do
   @impl true
   def start(_type, _args) do
     ws_port = Application.fetch_env!(:ex_media, :ws_port)
+
     children = [
       {ExMedia.PortPool, []},
       {ExMedia.SessionStore, []},
       {ExMedia.SessionTable, []},
       {Bandit, plug: ExMedia.Router, scheme: :http, port: ws_port},
       {DynamicSupervisor, strategy: :one_for_one, name: ExMedia.PipelineSupervisor},
-      {Registry, keys: :unique, name: ExMedia.PipelineRegistry},
+      {Registry, keys: :unique, name: ExMedia.PipelineRegistry}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

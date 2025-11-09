@@ -4,5 +4,6 @@ defmodule ExMedia.RtpEngine do
   """
 
   @callback start_link(opts :: Keyword.t()) :: {:ok, pid()} | {:error, any()}
-  @callback handle_command(command :: any(), state :: any()) :: {:noreply, any()} | {:reply, any(), any()}
+  @callback handle_command(command :: any(), state :: any()) ::
+              {:noreply, any()} | {:reply, any(), any()}
 end
