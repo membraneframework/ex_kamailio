@@ -1,0 +1,49 @@
+defmodule ExKamailio.Session do
+  @moduledoc """
+  State of a single call, threaded through `ExKamailio.Handler` callbacks.
+
+  - `call_id` / `from_tag` / `to_tag` — SIP identifiers forwarded by Kamailio.
+  - `state` — lifecycle state: `:offered` after the offer has been processed,
+    `:answered` once the answer has come back.
+  - `caller_local` / `callee_local` — endpoints allocated by ex_kamailio for
+    each leg of the call. These are the addresses Kamailio rewrites the SDP
+    to point at, so RTP from each party arrives at our box.
+  - `caller_remote` / `callee_remote` — endpoints learned from each party's
+    SDP (caller's from the offer, callee's from the answer). May still be
+    behind NAT; symmetric-RTP latching happens at the media layer.
+  - `offer_sdp` / `answer_sdp` — parsed `%ExSDP{}` structs from each party.
+  """
+
+  alias ExKamailio.Endpoint
+
+  @type call_id :: String.t()
+  @type lifecycle :: :offered | :answered
+
+  @type t :: %__MODULE__{
+          call_id: call_id(),
+          from_tag: String.t() | nil,
+          to_tag: String.t() | nil,
+          state: lifecycle(),
+          caller_local: Endpoint.t() | nil,
+          callee_local: Endpoint.t() | nil,
+          caller_remote: Endpoint.t() | nil,
+          callee_remote: Endpoint.t() | nil,
+          offer_sdp: ExSDP.t() | nil,
+          answer_sdp: ExSDP.t() | nil,
+          touched_at: integer() | nil
+        }
+
+  defstruct [
+    :call_id,
+    :from_tag,
+    :to_tag,
+    :state,
+    :caller_local,
+    :callee_local,
+    :caller_remote,
+    :callee_remote,
+    :offer_sdp,
+    :answer_sdp,
+    :touched_at
+  ]
+end

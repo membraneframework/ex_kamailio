@@ -1,0 +1,16 @@
+# Mix artifacts
+_build/
+deps/
+*.ez
+mix.lock
+erl_crash.dump
+
+# Ignored examples build/deps trees too
+examples/*/_build/
+examples/*/deps/
+examples/*/mix.lock
+examples/*/erl_crash.dump
+
+# Editor
+.elixir_ls/
+.vscode/
