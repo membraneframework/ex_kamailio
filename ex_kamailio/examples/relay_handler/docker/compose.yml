@@ -1,0 +1,71 @@
+# End-to-end test rig for relay_handler. Four services on a shared docker
+# network: Kamailio (signaling), relay_handler (Membrane RTP relay running
+# in Elixir), and two SIPp endpoints (UAS + UAC).
+#
+# Why the relay runs in a container: on macOS / Colima the host can't route
+# UDP back to container bridge IPs, so a host-run relay would receive RTP
+# from peers but couldn't deliver it to the other side. Sharing the docker
+# network sidesteps that.
+#
+# Usage:
+#   1. Bring up the long-running services:
+#        docker compose up -d --build relay kamailio sipp-uas
+#   2. Place a call:
+#        docker compose run --rm sipp-uac
+#   3. Watch the relay's packet counters:
+#        docker compose logs -f relay
+
+services:
+  relay:
+    build:
+      context: ../../..             # repo root of ex_kamailio
+      dockerfile: examples/relay_handler/docker/relay/Dockerfile
+    environment:
+      # SDP address Kamailio rewrites peer media to. `relay` is the docker
+      # service name; peers resolve it via docker DNS.
+      MEDIA_IP: relay
+    expose:
+      - "4003/tcp"
+      - "11000-11200/udp"
+
+  kamailio:
+    build: ./kamailio
+    depends_on:
+      - relay
+    expose:
+      - "5060/udp"
+
+  sipp-uas:
+    build: ../../echo_handler/docker/sipp
+    volumes:
+      - ./sipp/uas.xml:/scenarios/uas.xml:ro
+    command:
+      [
+        "sipp",
+        "-sf", "/scenarios/uas.xml",
+        "-p", "5070",
+        "-mp", "6000",
+        "-trace_msg",
+        "-trace_screen",
+      ]
+    expose:
+      - "5070/udp"
+      - "6000/udp"
+
+  sipp-uac:
+    build: ../../echo_handler/docker/sipp
+    volumes:
+      - ./sipp/uac.xml:/scenarios/uac.xml:ro
+    command:
+      [
+        "sipp",
+        "-sf", "/scenarios/uac.xml",
+        "kamailio:5060",
+        "-m", "1",
+        "-mp", "6000",
+        "-trace_msg",
+        "-trace_screen",
+      ]
+    depends_on:
+      - kamailio
+      - sipp-uas

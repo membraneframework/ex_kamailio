@@ -177,11 +177,11 @@ defmodule ExKamailio.WebSocket do
       end
     else
       nil ->
-        # No session — Kamailio is replaying or the call was deleted.
+        Logger.warning("answer for unknown call_id=#{inspect(call_id)}")
         {:push, reply_error(cookie, "unknown call"), state}
 
-      %Session{} ->
-        # Late answer for a session that already moved past :offered.
+      %Session{state: actual} ->
+        Logger.warning("late answer for call_id=#{inspect(call_id)} in state=#{inspect(actual)}")
         {:push, reply_error(cookie, "unknown call"), state}
 
       {:error, :no_ports} ->

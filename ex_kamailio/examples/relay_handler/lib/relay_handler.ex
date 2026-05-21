@@ -56,11 +56,12 @@ defmodule RelayHandler do
   end
 
   defp start_pipeline(session) do
-    local_ip = parse_ip(Application.fetch_env!(:ex_kamailio, :media_ip))
-
     opts = %{
       call_id: session.call_id,
-      local_ip: local_ip,
+      # Bind on every interface; the address peers reach us at lives in the
+      # SDP (`media_ip`), which doesn't need to be a routable IP — it can be
+      # a name like `host.docker.internal` that resolves on the peer side.
+      local_ip: :any,
       caller_local: session.caller_local,
       caller_remote: session.caller_remote,
       callee_local: session.callee_local,
@@ -94,13 +95,4 @@ defmodule RelayHandler do
 
   defp ip_to_string(ip) when is_tuple(ip), do: :inet.ntoa(ip) |> to_string()
   defp ip_to_string(ip) when is_binary(ip), do: ip
-
-  defp parse_ip(ip) when is_tuple(ip), do: ip
-
-  defp parse_ip(ip) when is_binary(ip) do
-    case :inet.parse_address(String.to_charlist(ip)) do
-      {:ok, parsed} -> parsed
-      {:error, _} -> {127, 0, 0, 1}
-    end
-  end
 end
