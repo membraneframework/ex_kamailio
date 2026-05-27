@@ -55,14 +55,15 @@
     ]]>
   </send>
 
-  <!-- Stream a real RTP burst into the relay. SIPp ships with g711a.pcap. -->
+  <!-- Stream a 440 Hz sine-tone PCMA fixture (~3s, 150 packets) into the
+       relay. The recorder on the relay side captures the full duration. -->
   <nop>
     <action>
-      <exec play_pcap_audio="/usr/share/sip-tester/g711a.pcap"/>
+      <exec play_pcap_audio="/scenarios/tone.pcap"/>
     </action>
   </nop>
 
-  <pause milliseconds="3000"/>
+  <pause milliseconds="3500"/>
 
   <send retrans="500">
     <![CDATA[

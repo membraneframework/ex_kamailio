@@ -144,7 +144,23 @@ defmodule ExKamailio.WebSocket do
     to_tag = fetch_id(cmd, "to-tag")
     answer_sdp_text = Map.get(cmd, "sdp")
 
-    with %Session{state: :offered} = session <- SessionTable.get(call_id),
+    case SessionTable.get(call_id) do
+      %Session{state: :answered, to_tag: ^to_tag, answer_reply_sdp: reply_sdp}
+      when is_binary(reply_sdp) ->
+        # Retransmitted answer for the same dialog — Kamailio forwards 200 OK
+        # retransmissions through onreply_route, so rtpengine_answer() fires
+        # again. The rtpengine protocol expects idempotent answers; replay
+        # the cached reply instead of re-invoking the handler (which would
+        # try to spawn a second pipeline / re-allocate ports).
+        {:push, encode_reply(cookie, %{result: "ok", sdp: reply_sdp}), state}
+
+      session ->
+        do_fresh_answer(cookie, call_id, to_tag, answer_sdp_text, session, state)
+    end
+  end
+
+  defp do_fresh_answer(cookie, call_id, to_tag, answer_sdp_text, prior_session, state) do
+    with %Session{state: :offered} = session <- prior_session,
          {:ok, answer_sdp} <- SDP.parse(answer_sdp_text),
          {:ok, {callee_rtp, _}} <- PortPool.checkout({call_id, to_tag}) do
       callee_local = %Endpoint{
@@ -164,7 +180,7 @@ defmodule ExKamailio.WebSocket do
 
       case state.handler_mod.answer(session, state.handler_state) do
         {:ok, reply_sdp, handler_state} ->
-          :ok = SessionTable.put(session)
+          :ok = SessionTable.put(%Session{session | answer_reply_sdp: reply_sdp})
           reply = encode_reply(cookie, %{result: "ok", sdp: reply_sdp})
           {:push, reply, %{state | handler_state: handler_state}}
 

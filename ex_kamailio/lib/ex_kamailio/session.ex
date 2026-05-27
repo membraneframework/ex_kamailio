@@ -12,6 +12,9 @@ defmodule ExKamailio.Session do
     SDP (caller's from the offer, callee's from the answer). May still be
     behind NAT; symmetric-RTP latching happens at the media layer.
   - `offer_sdp` / `answer_sdp` — parsed `%ExSDP{}` structs from each party.
+  - `answer_reply_sdp` — the SDP text we sent back to Kamailio on the first
+    answer. Cached so retransmitted answer commands can be served
+    idempotently without re-invoking the handler.
   """
 
   alias ExKamailio.Endpoint
@@ -30,6 +33,7 @@ defmodule ExKamailio.Session do
           callee_remote: Endpoint.t() | nil,
           offer_sdp: ExSDP.t() | nil,
           answer_sdp: ExSDP.t() | nil,
+          answer_reply_sdp: String.t() | nil,
           touched_at: integer() | nil
         }
 
@@ -44,6 +48,7 @@ defmodule ExKamailio.Session do
     :callee_remote,
     :offer_sdp,
     :answer_sdp,
+    :answer_reply_sdp,
     :touched_at
   ]
 end
