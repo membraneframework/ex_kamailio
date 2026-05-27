@@ -1,8 +1,10 @@
 # Docker-based E2E for relay_handler
 
-A four-service compose that runs a real SIP call between two SIPp endpoints
+A five-service compose that runs a real SIP call between two SIPp endpoints
 through Kamailio, with RTP relayed by a Membrane pipeline inside the
-`relay_handler` container.
+`relay_handler` container, and a small Membrane-based `sink` standing in
+for the receiving peer's media socket so audio that crossed the relay can
+be replayed afterwards.
 
 ```
   sipp-uac  ──INVITE──▶  kamailio  ◀───rtpengine ng (ws://relay:4003)───▶  relay_handler
@@ -11,8 +13,15 @@ through Kamailio, with RTP relayed by a Membrane pipeline inside the
      │                                                                         │
      └──────────────── RTP ────────────────▶ relay ◀──────── RTP ──────────────┘
                                               │
-                                              └──── RTP ────▶ sipp-uas
+                                              └──── RTP ────▶ sink  ──▶ /recordings/uas.alaw
 ```
+
+`sipp-uas` only handles SIP signaling. The SDP it sends back advertises
+`sink`'s container IP (templated at startup) as the media address, so
+rtpengine rewrites the answer accordingly and the relay forwards RTP to
+`sink` instead of to sipp-uas. The sink is a 3-element Membrane pipeline
+(`Membrane.UDP.Source → Membrane.RTP.Parser → Membrane.File.Sink`) that
+strips RTP headers and writes the codec payload to a file.
 
 ## Why everything runs in containers
 
@@ -30,10 +39,13 @@ this entirely.
 
 ```sh
 # Build images and start the long-running services.
-docker compose up -d --build relay kamailio sipp-uas
+docker compose up -d --build relay kamailio sink sipp-uas
 
-# Place one call (UAC plays ~3s of g711 RTP into the relay).
+# Place one call (UAC plays ~3s of a 440 Hz tone into the relay).
 docker compose run --rm sipp-uac
+
+# Listen to what arrived at the receiving peer.
+ffplay -f alaw -ar 8000 -ac 1 recordings/uas.alaw
 
 # Watch packet counters and pipeline lifecycle.
 docker compose logs relay
@@ -45,41 +57,15 @@ Expected `relay` log lines:
 [relay] offer  call=…  caller remote=… local=…
 [relay] answer call=…  callee remote=… local=…
 Pipeline<…> [relay] start call=…
-Pipeline<…> [relay] call=… caller→callee=16 pkts, callee→caller=0 pkts
+Pipeline<…> [relay] call=… caller→callee=148 pkts, callee→caller=0 pkts
 [relay] delete call=…
 ```
 
 `caller→callee` counts the SIPp UAC's `play_pcap_audio` traffic transiting
 the Membrane pipeline. `callee→caller` is 0 because the bundled UAS
-scenario only listens — SIPp's `play_pcap_audio` in UAS scenarios needs
-extra setup that isn't worth doing for the demo. The bidirectional
-symmetry of the relay pipeline is independently verified by a direct
-probe test (see project history).
-
-## Listen to what transited the relay
-
-When `RECORDINGS_DIR` is set on the relay (it is by default in this rig),
-each call writes raw PCMA captures per direction to `./recordings/`:
-
-```
-./recordings/<call-id>.caller-to-callee.alaw
-./recordings/<call-id>.callee-to-caller.alaw
-```
-
-Play directly:
-
-```sh
-ffplay -f alaw -ar 8000 -ac 1 recordings/<file>.alaw
-```
-
-Or convert to WAV:
-
-```sh
-sox -t al -r 8000 -c 1 recordings/<file>.alaw recordings/<file>.wav
-```
-
-For the bundled SIPp UAS scenario only the `caller-to-callee` file has audio;
-the `callee-to-caller` file is empty because the UAS doesn't send RTP back.
+scenario only listens. `sink` writes one `/recordings/uas.alaw` file per
+run (overwritten between calls); restart the sink container if you want a
+clean slate.
 
 ## Tear down
 

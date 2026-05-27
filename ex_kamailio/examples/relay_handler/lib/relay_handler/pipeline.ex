@@ -30,7 +30,6 @@ defmodule RelayHandler.Pipeline do
   require Membrane.Logger
   alias Membrane.{Debug, UDP.Endpoint}
   alias ExKamailio.Endpoint, as: EkEndpoint
-  alias RelayHandler.PcmaRecorder
 
   @type opts :: %{
           call_id: String.t(),
@@ -73,15 +72,14 @@ defmodule RelayHandler.Pipeline do
     caller_to_callee = :counters.new(1, [])
     callee_to_caller = :counters.new(1, [])
 
-    spec =
-      build_spec(
-        caller_leg,
-        callee_leg,
-        caller_to_callee,
-        callee_to_caller,
-        System.get_env("RECORDINGS_DIR"),
-        opts.call_id
-      )
+    spec = [
+      child(:caller_leg, caller_leg)
+      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(caller_to_callee)})
+      |> child(:callee_leg, callee_leg),
+      get_child(:callee_leg)
+      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(callee_to_caller)})
+      |> get_child(:caller_leg)
+    ]
 
     state = %{
       call_id: opts.call_id,
@@ -106,35 +104,5 @@ defmodule RelayHandler.Pipeline do
 
   defp tally(counter) do
     fn _buffer -> :counters.add(counter, 1, 1) end
-  end
-
-  defp build_spec(caller_leg, callee_leg, c2c, c2c_back, nil, _call_id) do
-    [
-      child(:caller_leg, caller_leg)
-      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(c2c)})
-      |> child(:callee_leg, callee_leg),
-      get_child(:callee_leg)
-      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(c2c_back)})
-      |> get_child(:caller_leg)
-    ]
-  end
-
-  defp build_spec(caller_leg, callee_leg, c2c, c2c_back, recordings_dir, call_id) do
-    sanitized = String.replace(call_id, ~r/[^A-Za-z0-9._-]/, "_")
-    fwd = Path.join(recordings_dir, "#{sanitized}.caller-to-callee.alaw")
-    back = Path.join(recordings_dir, "#{sanitized}.callee-to-caller.alaw")
-
-    Membrane.Logger.info("[relay] recording call=#{call_id} to #{recordings_dir}")
-
-    [
-      child(:caller_leg, caller_leg)
-      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(c2c)})
-      |> child(:rec_caller_to_callee, %PcmaRecorder{path: fwd})
-      |> child(:callee_leg, callee_leg),
-      get_child(:callee_leg)
-      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(c2c_back)})
-      |> child(:rec_callee_to_caller, %PcmaRecorder{path: back})
-      |> get_child(:caller_leg)
-    ]
   end
 end

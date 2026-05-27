@@ -9,11 +9,13 @@
 #
 # Usage:
 #   1. Bring up the long-running services:
-#        docker compose up -d --build relay kamailio sipp-uas
+#        docker compose up -d --build relay kamailio sink sipp-uas
 #   2. Place a call:
 #        docker compose run --rm sipp-uac
 #   3. Watch the relay's packet counters:
 #        docker compose logs -f relay
+#   4. Listen to what arrived at the receiving peer:
+#        ffplay -f alaw -ar 8000 -ac 1 recordings/uas.alaw
 
 services:
   relay:
@@ -24,10 +26,6 @@ services:
       # SDP address Kamailio rewrites peer media to. `relay` is the docker
       # service name; peers resolve it via docker DNS.
       MEDIA_IP: relay
-      # Per-call raw PCMA captures are written here; host-mounted below.
-      RECORDINGS_DIR: /recordings
-    volumes:
-      - ./recordings:/recordings
     expose:
       - "4003/tcp"
       - "11000-11200/udp"
@@ -39,22 +37,39 @@ services:
     expose:
       - "5060/udp"
 
+  # Receives RTP from the relay and writes the depayloaded payload to a
+  # file in ./recordings/. Use `ffplay -f alaw -ar 8000 -ac 1
+  # recordings/uas.alaw` after a call to listen to what arrived.
+  sink:
+    build: ./sink
+    environment:
+      SINK_PORT: 6000
+      SINK_OUTPUT: /recordings/uas.alaw
+    volumes:
+      - ./recordings:/recordings
+    expose:
+      - "6000/udp"
+
   sipp-uas:
     build: ../../echo_handler/docker/sipp
     volumes:
       - ./sipp/uas.xml:/scenarios/uas.xml:ro
+    # Templates the SDP at startup so it advertises `sink`'s IP, then runs
+    # sipp. We can't just pass `-mi sink_ip` to sipp because that flag is
+    # used both for SDP advertising AND for binding the local RTP socket —
+    # and the sink's IP isn't a local address on this container. Instead
+    # we resolve it via docker DNS and sed it into the scenario.
+    entrypoint: ["sh", "-c"]
     command:
-      [
-        "sipp",
-        "-sf", "/scenarios/uas.xml",
-        "-p", "5070",
-        "-mp", "6000",
-        "-trace_msg",
-        "-trace_screen",
-      ]
+      - |
+        SINK_IP=$$(getent hosts sink | awk '{print $$1}')
+        echo "[sipp-uas] templating media IP -> $$SINK_IP"
+        sed "s/\[media_ip\]/$$SINK_IP/g" /scenarios/uas.xml > /tmp/uas.xml
+        exec sipp -sf /tmp/uas.xml -p 5070 -mp 6000 -trace_msg -trace_screen
+    depends_on:
+      - sink
     expose:
       - "5070/udp"
-      - "6000/udp"
 
   sipp-uac:
     build: ../../echo_handler/docker/sipp
