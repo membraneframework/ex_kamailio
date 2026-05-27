@@ -1,26 +1,53 @@
 #!/usr/bin/env bash
-# Generate a PCMA RTP PCAP for SIPp's play_pcap_audio. The resulting file is
-# a series of 20 ms RTP packets (50 pps) carrying a sine tone, so the relay
-# receives a known, audible test signal that can be cross-checked against
-# what we record on the other leg.
+# Generate a PCMA RTP PCAP for SIPp's play_pcap_audio AND a matching plain
+# PCMA file for direct playback. The pcap is what the UAC streams into the
+# relay; the .alaw is the same audio in a form you can ffplay alongside
+# the sink's capture to confirm by ear that the relay carried the audio
+# through intact.
 #
-# Usage: gen_tone_pcap.sh [output.pcap] [frequency_hz] [duration_seconds]
+# Each frequency in the freq list plays for 1 second; total duration =
+# (number of frequencies) seconds, at 50 packets/sec (20 ms PCMA frames).
+#
+# Usage:
+#   gen_tone_pcap.sh OUT.pcap OUT.alaw FREQ1,FREQ2,...,FREQN
+#
+# Example (a ten-second up-and-down melody):
+#   gen_tone_pcap.sh tone.pcap tone.alaw \
+#     220,330,440,550,660,880,660,550,440,330
+#
+# Listen back to the reference with:
+#   ffplay -f alaw -ar 8000 -ac 1 OUT.alaw
 
 set -euo pipefail
 
-out="${1:-tone.pcap}"
-freq="${2:-440}"
-duration="${3:-3}"
+if [ "$#" -ne 3 ]; then
+  echo "usage: $0 OUT.pcap OUT.alaw FREQ1,FREQ2,..." >&2
+  exit 2
+fi
+
+out_pcap="$1"
+out_alaw="$2"
+IFS=',' read -ra freqs <<< "$3"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-ffmpeg -nostdin -loglevel error -y \
-  -f lavfi -i "sine=frequency=${freq}:duration=${duration}" \
-  -ar 8000 -ac 1 -f alaw \
-  "$tmpdir/tone.alaw"
+# Synthesize each 1-second segment as raw PCMA, then concatenate. PCMA is
+# bytewise-concatenatable because it's a fixed-rate codec with no framing.
+seg_files=()
+for i in "${!freqs[@]}"; do
+  f="${freqs[$i]}"
+  seg="$tmpdir/seg_$(printf '%04d' "$i").alaw"
+  ffmpeg -nostdin -loglevel error -y \
+    -f lavfi -i "sine=frequency=${f}:duration=1" \
+    -ar 8000 -ac 1 -f alaw "$seg"
+  seg_files+=("$seg")
+done
 
-python3 - "$tmpdir/tone.alaw" "$out" <<'PY'
+cat "${seg_files[@]}" > "$out_alaw"
+echo "wrote reference $(stat -f%z "$out_alaw" 2>/dev/null || stat -c%s "$out_alaw") bytes to $out_alaw"
+
+python3 - "$out_alaw" "$out_pcap" <<'PY'
 import struct, sys
 
 in_path, out_path = sys.argv[1], sys.argv[2]

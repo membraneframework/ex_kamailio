@@ -55,15 +55,15 @@
     ]]>
   </send>
 
-  <!-- Stream a 440 Hz sine-tone PCMA fixture (~3s, 150 packets) into the
-       relay. The recorder on the relay side captures the full duration. -->
+  <!-- Stream a 10s PCMA melody (500 packets) into the relay. The sink on
+       the receiving side captures the full duration to recordings/uas.alaw. -->
   <nop>
     <action>
       <exec play_pcap_audio="/scenarios/tone.pcap"/>
     </action>
   </nop>
 
-  <pause milliseconds="3500"/>
+  <pause milliseconds="11000"/>
 
   <send retrans="500">
     <![CDATA[
