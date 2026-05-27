@@ -24,6 +24,10 @@ services:
       # SDP address Kamailio rewrites peer media to. `relay` is the docker
       # service name; peers resolve it via docker DNS.
       MEDIA_IP: relay
+      # Per-call raw PCMA captures are written here; host-mounted below.
+      RECORDINGS_DIR: /recordings
+    volumes:
+      - ./recordings:/recordings
     expose:
       - "4003/tcp"
       - "11000-11200/udp"
@@ -56,6 +60,7 @@ services:
     build: ../../echo_handler/docker/sipp
     volumes:
       - ./sipp/uac.xml:/scenarios/uac.xml:ro
+      - ./sipp/tone.pcap:/scenarios/tone.pcap:ro
     command:
       [
         "sipp",
@@ -63,8 +68,6 @@ services:
         "kamailio:5060",
         "-m", "1",
         "-mp", "6000",
-        "-trace_msg",
-        "-trace_screen",
       ]
     depends_on:
       - kamailio

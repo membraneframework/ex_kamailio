@@ -16,12 +16,13 @@ defmodule RelayHandler.Pipeline do
   Output buffers from one leg are routed into the input of the other so that
   audio in flight from peer A is sent out the socket facing peer B.
 
+  Both legs run with `latch?: true`, so each leg's outbound destination
+  starts at the address from the peer's SDP and then follows whatever source
+  the last inbound packet on that leg arrived from — the symmetric-RTP /
+  NAT-traversal behaviour rtpengine itself provides.
+
   Limitations:
     * RTP only — RTCP is not relayed (would need a second pair of endpoints).
-    * No latching — destinations come from each peer's SDP and are fixed for
-      the call. Symmetric-NAT peers will not work without latching, which can
-      be added by inspecting `udp_source_address`/`udp_source_port` on the
-      output buffers and rewriting the opposite leg's destination.
   """
 
   use Membrane.Pipeline
@@ -29,6 +30,7 @@ defmodule RelayHandler.Pipeline do
   require Membrane.Logger
   alias Membrane.{Debug, UDP.Endpoint}
   alias ExKamailio.Endpoint, as: EkEndpoint
+  alias RelayHandler.PcmaRecorder
 
   @type opts :: %{
           call_id: String.t(),
@@ -56,31 +58,30 @@ defmodule RelayHandler.Pipeline do
       local_address: opts.local_ip,
       local_port_no: opts.callee_local.rtp_port,
       destination_address: opts.caller_remote.ip,
-      destination_port_no: opts.caller_remote.rtp_port
+      destination_port_no: opts.caller_remote.rtp_port,
+      latch?: true
     }
 
     callee_leg = %Endpoint{
       local_address: opts.local_ip,
       local_port_no: opts.caller_local.rtp_port,
       destination_address: opts.callee_remote.ip,
-      destination_port_no: opts.callee_remote.rtp_port
+      destination_port_no: opts.callee_remote.rtp_port,
+      latch?: true
     }
 
     caller_to_callee = :counters.new(1, [])
     callee_to_caller = :counters.new(1, [])
 
-    spec = [
-      # Caller → relay → callee:
-      # caller's RTP arrives at :caller_leg, output goes through the probe,
-      # then out :callee_leg toward the callee.
-      child(:caller_leg, caller_leg)
-      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(caller_to_callee)})
-      |> child(:callee_leg, callee_leg),
-      # Callee → relay → caller: the mirror image.
-      get_child(:callee_leg)
-      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(callee_to_caller)})
-      |> get_child(:caller_leg)
-    ]
+    spec =
+      build_spec(
+        caller_leg,
+        callee_leg,
+        caller_to_callee,
+        callee_to_caller,
+        System.get_env("RECORDINGS_DIR"),
+        opts.call_id
+      )
 
     state = %{
       call_id: opts.call_id,
@@ -105,5 +106,35 @@ defmodule RelayHandler.Pipeline do
 
   defp tally(counter) do
     fn _buffer -> :counters.add(counter, 1, 1) end
+  end
+
+  defp build_spec(caller_leg, callee_leg, c2c, c2c_back, nil, _call_id) do
+    [
+      child(:caller_leg, caller_leg)
+      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(c2c)})
+      |> child(:callee_leg, callee_leg),
+      get_child(:callee_leg)
+      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(c2c_back)})
+      |> get_child(:caller_leg)
+    ]
+  end
+
+  defp build_spec(caller_leg, callee_leg, c2c, c2c_back, recordings_dir, call_id) do
+    sanitized = String.replace(call_id, ~r/[^A-Za-z0-9._-]/, "_")
+    fwd = Path.join(recordings_dir, "#{sanitized}.caller-to-callee.alaw")
+    back = Path.join(recordings_dir, "#{sanitized}.callee-to-caller.alaw")
+
+    Membrane.Logger.info("[relay] recording call=#{call_id} to #{recordings_dir}")
+
+    [
+      child(:caller_leg, caller_leg)
+      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(c2c)})
+      |> child(:rec_caller_to_callee, %PcmaRecorder{path: fwd})
+      |> child(:callee_leg, callee_leg),
+      get_child(:callee_leg)
+      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(c2c_back)})
+      |> child(:rec_callee_to_caller, %PcmaRecorder{path: back})
+      |> get_child(:caller_leg)
+    ]
   end
 end

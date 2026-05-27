@@ -45,6 +45,4 @@ flow above instead.
 ## Limitations
 
 - RTP only — RTCP is not relayed yet.
-- No latching — destinations come from each peer's SDP and are fixed.
-  Symmetric-NAT peers won't work without latching.
 - One pipeline per call; crash isolation is per-call.

@@ -56,6 +56,31 @@ extra setup that isn't worth doing for the demo. The bidirectional
 symmetry of the relay pipeline is independently verified by a direct
 probe test (see project history).
 
+## Listen to what transited the relay
+
+When `RECORDINGS_DIR` is set on the relay (it is by default in this rig),
+each call writes raw PCMA captures per direction to `./recordings/`:
+
+```
+./recordings/<call-id>.caller-to-callee.alaw
+./recordings/<call-id>.callee-to-caller.alaw
+```
+
+Play directly:
+
+```sh
+ffplay -f alaw -ar 8000 -ac 1 recordings/<file>.alaw
+```
+
+Or convert to WAV:
+
+```sh
+sox -t al -r 8000 -c 1 recordings/<file>.alaw recordings/<file>.wav
+```
+
+For the bundled SIPp UAS scenario only the `caller-to-callee` file has audio;
+the `callee-to-caller` file is empty because the UAS doesn't send RTP back.
+
 ## Tear down
 
 ```sh
@@ -76,7 +101,5 @@ docker compose down
 ## Limitations
 
 - RTP only (no RTCP relay).
-- No latching: peer destinations come from each SDP and are fixed for
-  the call. Inside this rig SIPp advertises routable container IPs.
 - Single-call demo. The relay handles multiple calls fine, but the
   scenario is `-m 1`.
