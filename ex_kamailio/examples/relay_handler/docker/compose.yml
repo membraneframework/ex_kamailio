@@ -7,7 +7,7 @@
 # from peers but couldn't deliver it to the other side. Sharing the docker
 # network sidesteps that.
 #
-# Usage:
+# Usage (bridge mode — internal Docker E2E):
 #   1. Bring up the long-running services:
 #        docker compose up -d --build relay kamailio sink sipp-uas
 #   2. Register user 1000 (one-shot) so Kamailio's lookup("location") works:
@@ -18,6 +18,9 @@
 #        docker compose logs -f relay
 #   5. Listen to what arrived at the receiving peer:
 #        ffplay -f alaw -ar 8000 -ac 1 recordings/uas.alaw
+#
+# For real-softphone calls on the LAN, layer compose.lan.yml on top —
+# see that file's header for the prerequisites and commands.
 
 services:
   relay:

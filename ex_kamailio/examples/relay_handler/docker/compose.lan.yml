@@ -1,0 +1,41 @@
+# Overlay for placing real-softphone calls through the Kamailio + relay
+# stack from devices on the LAN. Layered on top of compose.yml so the
+# default bridge-network rig (and its sipp self-test) keeps working
+# unchanged.
+#
+# Prereqs (one-time, see NEXT.md):
+#   1. Colima with `--network-address` so the VM has a real LAN IP
+#        colima stop && colima start --network-address
+#        colima list   # ADDRESS column = the VM's LAN IP
+#   2. macOS firewall must allow incoming UDP on the Colima/vmnet
+#      interface — System Settings → Privacy & Security → Firewall.
+#
+# Usage:
+#   export COLIMA_LAN_IP=192.168.x.y      # from `colima list`
+#   docker compose -f compose.yml -f compose.lan.yml up -d --build kamailio relay
+#   # Point each softphone at $COLIMA_LAN_IP:5060 with a unique AOR;
+#   # they REGISTER on startup, then dial each other by AOR.
+#
+# Tear down:
+#   docker compose -f compose.yml -f compose.lan.yml down
+#
+# This puts `kamailio` and `relay` on the Colima VM's host network so
+# softphones on the LAN can reach VM:5060 (SIP) and the relay's
+# 11000-40000 UDP port range (RTP). The bridge-mode sipp services
+# defined in compose.yml are not started — they're for the internal
+# Docker E2E test only and use docker DNS that no longer applies here.
+
+services:
+  relay:
+    network_mode: host
+    environment:
+      # Address the relay advertises in rewritten SDPs — must be
+      # reachable from every softphone, so it's the VM's LAN IP.
+      MEDIA_IP: ${COLIMA_LAN_IP:?set COLIMA_LAN_IP to the colima VM LAN IP first}
+
+  kamailio:
+    network_mode: host
+    # `-A LAN_MODE` flips the rtpengine_sock branch in kamailio.cfg from
+    # `ws://relay:4003` (bridge DNS) to `ws://127.0.0.1:4003` (host net
+    # loopback, since kamailio and relay now share the VM's namespace).
+    command: ["kamailio", "-f", "/etc/kamailio/kamailio.cfg", "-DD", "-E", "-A", "LAN_MODE"]
