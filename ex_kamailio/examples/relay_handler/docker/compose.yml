@@ -10,11 +10,13 @@
 # Usage:
 #   1. Bring up the long-running services:
 #        docker compose up -d --build relay kamailio sink sipp-uas
-#   2. Place a call:
+#   2. Register user 1000 (one-shot) so Kamailio's lookup("location") works:
+#        docker compose run --rm sipp-register
+#   3. Place a call:
 #        docker compose run --rm sipp-uac
-#   3. Watch the relay's packet counters:
+#   4. Watch the relay's packet counters:
 #        docker compose logs -f relay
-#   4. Listen to what arrived at the receiving peer:
+#   5. Listen to what arrived at the receiving peer:
 #        ffplay -f alaw -ar 8000 -ac 1 recordings/uas.alaw
 
 services:
@@ -70,6 +72,25 @@ services:
       - sink
     expose:
       - "5070/udp"
+
+  # One-shot REGISTER for user 1000. Run with `docker compose run --rm
+  # sipp-register` after sipp-uas is up; this populates Kamailio's
+  # location table so the UAC's INVITE has somewhere to be routed.
+  sipp-register:
+    build: ../../echo_handler/docker/sipp
+    volumes:
+      - ./sipp/register.xml:/scenarios/register.xml:ro
+    command:
+      [
+        "sipp",
+        "-sf", "/scenarios/register.xml",
+        "kamailio:5060",
+        "-m", "1",
+        "-trace_msg", "-trace_screen",
+      ]
+    depends_on:
+      - kamailio
+      - sipp-uas
 
   sipp-uac:
     build: ../../echo_handler/docker/sipp

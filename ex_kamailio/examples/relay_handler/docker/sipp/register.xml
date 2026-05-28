@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!-- One-shot REGISTER on behalf of user 1000, pointing at sipp-uas's
+     container hostname so Kamailio's registrar (lookup("location")) can
+     route incoming INVITEs there. Runs with -m 1 and exits.
+
+     This is split from the UAS scenario because a single sipp instance
+     can't both initiate a REGISTER (UAC-style, scenario starts with
+     <send>) and accept INVITEs with new Call-IDs (UAS-style). -->
+<scenario name="ex_kamailio relay register">
+  <send retrans="500">
+    <![CDATA[
+
+      REGISTER sip:kamailio:5060 SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: <sip:1000@kamailio>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:1000@kamailio>
+      Call-ID: [call_id]
+      CSeq: 1 REGISTER
+      Contact: <sip:1000@sipp-uas:5070;transport=[transport]>
+      Max-Forwards: 70
+      Expires: 86400
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="200" rtd="true"/>
+</scenario>

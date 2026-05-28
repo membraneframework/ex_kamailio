@@ -3,7 +3,11 @@
 <!-- SIPp UAS for the relay test: answers the call with an SDP pointing at
      [media_ip]:[media_port] (-mi/-mp), then keeps the call open for ~3s
      so RTP from the UAC has time to traverse the Membrane relay and land
-     here. `rtp_echo` mode is implied by SIPp listening on the media port. -->
+     here. `rtp_echo` mode is implied by SIPp listening on the media port.
+
+     The REGISTER for user 1000 is sent by the separate sipp-register
+     service before the UAC fires — it points Kamailio's location table at
+     this container's hostname. -->
 <scenario name="ex_kamailio relay UAS">
   <recv request="INVITE" crlf="true"/>
 
