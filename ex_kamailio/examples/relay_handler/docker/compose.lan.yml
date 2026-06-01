@@ -1,50 +1,54 @@
 # Overlay for placing real-softphone calls through the Kamailio + relay
-# stack from devices on the LAN. Layered on top of compose.yml so the
-# default bridge-network rig (and its sipp self-test) keeps working
-# unchanged.
+# stack. Layered on top of compose.yml so the default bridge-network rig
+# (and its sipp self-test) keeps working unchanged.
 #
-# Prereqs (one-time, see NEXT.md):
-#   1. Colima with `--network-address` so the VM has a real LAN IP
-#        colima stop && colima start --network-address
-#        colima list   # ADDRESS column = the VM's LAN IP
-#   2. macOS firewall must allow incoming UDP on the Colima/vmnet
-#      interface — System Settings → Privacy & Security → Firewall.
+# This puts `kamailio` and `relay` on the host network namespace so peers
+# can reach them at whatever address you advertise (ADVERTISE_IP). The
+# bridge-mode sipp services in compose.yml are not started here — they're
+# for the internal Docker E2E test and use docker DNS that no longer
+# applies on the host network.
 #
-# Usage:
-#   export COLIMA_LAN_IP=192.168.x.y      # from `colima list`
-#   docker compose -f compose.yml -f compose.lan.yml up -d --build kamailio relay
-#   # Point each softphone at $COLIMA_LAN_IP:5060 with a unique AOR;
-#   # they REGISTER on startup, then dial each other by AOR.
+# ADVERTISE_IP is the ONE knob: it's the address every peer (softphones,
+# including a mobile) uses to reach this stack. It fans out to both the SIP
+# advertise address (Record-Route / Via) and the SDP media IP, so a peer's
+# in-dialog BYE and its RTP both come back to a routable address.
+#
+# How you fill ADVERTISE_IP depends on where the peers are — see the
+# "Reaching it from a real / mobile phone" section in README.md:
+#
+#   * Tailscale (default, works from any phone on any network):
+#       export TS_AUTHKEY=tskey-...   # from the Tailscale admin console
+#       ./tailscale-lan.sh            # resolves the tailnet IP for you
+#
+#   * Flat LAN where the host IP is directly reachable (Linux host, or
+#     macOS with a bridged VM):
+#       export ADVERTISE_IP=192.168.x.y
+#       docker compose -f compose.yml -f compose.lan.yml up -d --build kamailio relay
 #
 # Tear down:
 #   docker compose -f compose.yml -f compose.lan.yml down
-#
-# This puts `kamailio` and `relay` on the Colima VM's host network so
-# softphones on the LAN can reach VM:5060 (SIP) and the relay's
-# 11000-40000 UDP port range (RTP). The bridge-mode sipp services
-# defined in compose.yml are not started — they're for the internal
-# Docker E2E test only and use docker DNS that no longer applies here.
+#   # (add -f compose.tailscale.yml if you brought up the tailscale sidecar)
 
 services:
   relay:
     network_mode: host
     environment:
-      # Address the relay advertises in rewritten SDPs — must be
-      # reachable from every softphone, so it's the VM's LAN IP.
-      MEDIA_IP: ${COLIMA_LAN_IP:?set COLIMA_LAN_IP to the colima VM LAN IP first}
+      # Address the relay advertises in rewritten SDPs — must be reachable
+      # from every softphone.
+      MEDIA_IP: ${ADVERTISE_IP:?set ADVERTISE_IP — run ./tailscale-lan.sh, or export it to your reachable LAN IP}
 
   kamailio:
     network_mode: host
     environment:
-      # The VM's LAN IP kamailio advertises in Record-Route / Via so peers can
-      # route in-dialog BYE/ACK back to it (otherwise record_route() stamps
+      # Address kamailio advertises in Record-Route / Via so peers can route
+      # in-dialog BYE/ACK back to it (otherwise record_route() stamps
       # sip:0.0.0.0 and calls never tear down).
-      ADVERTISE_IP: ${COLIMA_LAN_IP:?set COLIMA_LAN_IP to the colima VM LAN IP first}
+      ADVERTISE_IP: ${ADVERTISE_IP:?set ADVERTISE_IP — run ./tailscale-lan.sh, or export it to your reachable LAN IP}
     # Template the advertise address into the cfg (the cfg ships with an
     # ADVERTISE_PLACEHOLDER token), then exec kamailio.
     # `-A LAN_MODE` flips the rtpengine_sock branch in kamailio.cfg from
     # `ws://relay:4003` (bridge DNS) to `ws://127.0.0.1:4003` (host net
-    # loopback, since kamailio and relay now share the VM's namespace) and
+    # loopback, since kamailio and relay now share the host namespace) and
     # selects the advertise-enabled listen line.
     entrypoint: ["sh", "-c"]
     command:
