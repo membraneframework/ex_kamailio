@@ -22,7 +22,10 @@ defmodule RelayHandler.MixProject do
     [
       {:ex_kamailio, path: "../.."},
       {:membrane_core, "~> 1.2"},
-      {:membrane_udp_plugin, "~> 0.14.3"}
+      {:membrane_udp_plugin, "~> 0.14.3"},
+      {:membrane_tee_plugin, "~> 0.12.0"},
+      {:membrane_rtp_plugin, "~> 0.31.3"},
+      {:membrane_file_plugin, "~> 0.17.3"}
     ]
   end
 end

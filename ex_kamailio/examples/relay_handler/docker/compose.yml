@@ -19,6 +19,12 @@
 #   5. Listen to what arrived at the receiving peer:
 #        ffplay -f alaw -ar 8000 -ac 1 recordings/uas.alaw
 #
+# The Membrane relay also drops a per-direction recording into recordings/
+# for every call it bridges (see RelayHandler.Pipeline moduledoc). Those are
+# raw PCMU (μ-law), so play with:
+#        ffplay -f mulaw -ar 8000 -ch_layout mono recordings/<call_id>__caller_to_callee.raw
+# (For ffmpeg <8, `-ac 1` instead of `-ch_layout mono`.)
+#
 # For real-softphone calls on the LAN, layer compose.lan.yml on top —
 # see that file's header for the prerequisites and commands.
 
@@ -31,6 +37,10 @@ services:
       # SDP address Kamailio rewrites peer media to. `relay` is the docker
       # service name; peers resolve it via docker DNS.
       MEDIA_IP: relay
+    # Mounted so the per-call Tee+File.Sink branches of the Membrane pipeline
+    # (RelayHandler.Pipeline) can write codec payloads here for inspection.
+    volumes:
+      - ./recordings:/recordings
     expose:
       - "4003/tcp"
       - "11000-11200/udp"
