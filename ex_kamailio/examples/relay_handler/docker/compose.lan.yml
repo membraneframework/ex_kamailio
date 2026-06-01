@@ -35,7 +35,20 @@ services:
 
   kamailio:
     network_mode: host
+    environment:
+      # The VM's LAN IP kamailio advertises in Record-Route / Via so peers can
+      # route in-dialog BYE/ACK back to it (otherwise record_route() stamps
+      # sip:0.0.0.0 and calls never tear down).
+      ADVERTISE_IP: ${COLIMA_LAN_IP:?set COLIMA_LAN_IP to the colima VM LAN IP first}
+    # Template the advertise address into the cfg (the cfg ships with an
+    # ADVERTISE_PLACEHOLDER token), then exec kamailio.
     # `-A LAN_MODE` flips the rtpengine_sock branch in kamailio.cfg from
     # `ws://relay:4003` (bridge DNS) to `ws://127.0.0.1:4003` (host net
-    # loopback, since kamailio and relay now share the VM's namespace).
-    command: ["kamailio", "-f", "/etc/kamailio/kamailio.cfg", "-DD", "-E", "-A", "LAN_MODE"]
+    # loopback, since kamailio and relay now share the VM's namespace) and
+    # selects the advertise-enabled listen line.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        sed "s/ADVERTISE_PLACEHOLDER/$$ADVERTISE_IP/g" /etc/kamailio/kamailio.cfg > /tmp/kamailio.cfg
+        echo "[kamailio] advertising $$ADVERTISE_IP in Record-Route/Via"
+        exec kamailio -f /tmp/kamailio.cfg -DD -E -A LAN_MODE

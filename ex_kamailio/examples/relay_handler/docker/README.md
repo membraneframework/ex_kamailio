@@ -241,6 +241,19 @@ telephone-event for DTMF. That's why every relay-side `.raw`
 recording is μ-law and `ffplay -f mulaw -ar 8000 -ch_layout mono`
 always works.
 
+### Call teardown (Record-Route / advertise address)
+
+Because kamailio runs `network_mode: host` and binds `0.0.0.0`,
+`record_route()` would otherwise stamp `sip:0.0.0.0` into the dialog —
+an address the softphones can't route their in-dialog BYE to, so
+hanging up one phone would never tear down the other (the relay
+pipeline would linger as a zombie). The kamailio entrypoint in
+`compose.lan.yml` fixes this by sed'ing `$COLIMA_LAN_IP` into the
+cfg's `advertise` address, so Record-Route/Via point at the VM's real
+LAN IP. If you ever see calls that don't hang up, check the startup
+log line `advertising <ip> in Record-Route/Via` and confirm `<ip>` is
+reachable from the phones.
+
 ### Tear down
 
 ```sh
@@ -255,6 +268,7 @@ docker compose -f compose.yml -f compose.lan.yml down
 |--------------------------------------|--------------------------------------------|
 | SDP-advertised media IP              | `MEDIA_IP` env in compose (bridge = `relay` docker name; LAN = `$COLIMA_LAN_IP`) |
 | Registrar destination (relay)        | `kamailio.cfg`, `rtpengine_sock` line — `#!ifdef LAN_MODE` selects loopback vs docker DNS |
+| SIP advertise address (LAN)          | `kamailio.cfg` `listen ... advertise ADVERTISE_PLACEHOLDER` — sed'd to `$COLIMA_LAN_IP` by the kamailio entrypoint; fixes in-dialog BYE routing |
 | Relay UDP port range                 | `ex_kamailio` `port_range` config (`config/config.exs`) |
 | Codec / payload types                | `RelayHandler.answer_for/1` — `[0, 101]`  |
 | Per-call recordings location         | `RelayHandler.Pipeline` — `@recordings_dir`, mounted from `./recordings` |
