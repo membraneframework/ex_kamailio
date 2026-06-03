@@ -44,11 +44,29 @@ services:
     expose:
       - "4003/tcp"
       - "11000-11200/udp"
+    # The Elixir app compiles + boots `mix run` at container start, so the
+    # rtpengine control socket (Bandit on :4003) isn't up immediately. Mark
+    # the relay healthy only once :4003 is LISTENing, so kamailio waits for
+    # it (see depends_on below) instead of failing rtpengine_offer on the
+    # first call. Checked via /proc/net/tcp to avoid adding tools to the
+    # image: 4003 == 0x0FA3, and 0A == TCP LISTEN; a listening socket has
+    # rem_address 00000000:0000.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q '0FA3 00000000:0000 0A' /proc/net/tcp"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 90s
 
   kamailio:
     build: ./kamailio
+    # Wait until the relay's control socket is actually listening, not just
+    # until its container has started — otherwise kamailio's first
+    # rtpengine WebSocket connect races the relay's boot and the node gets
+    # marked dead until the next ping/restart.
     depends_on:
-      - relay
+      relay:
+        condition: service_healthy
     expose:
       - "5060/udp"
 
