@@ -1,55 +1,21 @@
-# Overlay for placing real-softphone calls through the Kamailio + relay
-# stack. Layered on top of compose.yml so the default bridge-network rig
-# (and its sipp self-test) keeps working unchanged.
-#
-# This puts `kamailio` and `relay` on the host network namespace so peers
-# can reach them at whatever address you advertise (ADVERTISE_IP). The
-# bridge-mode sipp services in compose.yml are not started here — they're
-# for the internal Docker E2E test and use docker DNS that no longer
-# applies on the host network.
-#
-# ADVERTISE_IP is the ONE knob: it's the address every peer (softphones,
-# including a mobile) uses to reach this stack. It fans out to both the SIP
-# advertise address (Record-Route / Via) and the SDP media IP, so a peer's
-# in-dialog BYE and its RTP both come back to a routable address.
-#
-# How you fill ADVERTISE_IP depends on where the peers are — see the
-# "Reaching it from a real / mobile phone" section in README.md:
-#
-#   * Tailscale (default, works from any phone on any network):
-#       export TS_AUTHKEY=tskey-...   # from the Tailscale admin console
-#       ./tailscale-lan.sh            # resolves the tailnet IP for you
-#
-#   * Flat LAN where the host IP is directly reachable (Linux host, or
-#     macOS with a bridged VM):
-#       export ADVERTISE_IP=192.168.x.y
-#       docker compose -f compose.yml -f compose.lan.yml up -d --build kamailio relay
-#
-# Tear down:
-#   docker compose -f compose.yml -f compose.lan.yml down
-#   # (add -f compose.tailscale.yml if you brought up the tailscale sidecar)
+# LAN-mode overlay: runs kamailio + relay on the host netns so real
+# softphones (incl. a mobile) register and call through the stack.
+# ADVERTISE_IP is the one knob — the address every peer uses to reach us
+# (SIP advertise + SDP media IP). Setup/teardown and the ways to fill
+# ADVERTISE_IP: see README.md "Reaching it from a real / mobile phone".
 
 services:
   relay:
     network_mode: host
     environment:
-      # Address the relay advertises in rewritten SDPs — must be reachable
-      # from every softphone.
       MEDIA_IP: ${ADVERTISE_IP:?set ADVERTISE_IP — run ./tailscale-lan.sh, or export it to your reachable LAN IP}
 
   kamailio:
     network_mode: host
     environment:
-      # Address kamailio advertises in Record-Route / Via so peers can route
-      # in-dialog BYE/ACK back to it (otherwise record_route() stamps
-      # sip:0.0.0.0 and calls never tear down).
       ADVERTISE_IP: ${ADVERTISE_IP:?set ADVERTISE_IP — run ./tailscale-lan.sh, or export it to your reachable LAN IP}
-    # Template the advertise address into the cfg (the cfg ships with an
-    # ADVERTISE_PLACEHOLDER token), then exec kamailio.
-    # `-A LAN_MODE` flips the rtpengine_sock branch in kamailio.cfg from
-    # `ws://relay:4003` (bridge DNS) to `ws://127.0.0.1:4003` (host net
-    # loopback, since kamailio and relay now share the host namespace) and
-    # selects the advertise-enabled listen line.
+    # Template ADVERTISE_IP into the cfg's ADVERTISE_PLACEHOLDER, then exec.
+    # -A LAN_MODE selects the loopback rtpengine_sock + advertise/alias lines.
     entrypoint: ["sh", "-c"]
     command:
       - |

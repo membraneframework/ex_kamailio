@@ -11,10 +11,11 @@ together, in two modes:
   your Mac (Linphone, Zoiper, …) can REGISTER and call each other
   through the same stack.
 
-Both modes share the same Kamailio config and relay image; LAN mode
-only flips `network_mode` and toggles a `#!ifdef LAN_MODE` block in
-the cfg that switches `rtpengine_sock` between docker DNS
-(`ws://relay:4003`) and loopback (`ws://127.0.0.1:4003`).
+Both modes share the same Kamailio config and relay image. LAN mode
+flips `network_mode` and takes the `#!ifdef LAN_MODE` branches in the
+cfg: `rtpengine_sock` becomes loopback (`ws://127.0.0.1:4003`) instead
+of docker DNS (`ws://relay:4003`), and the `advertise`/`alias` lines
+for `$ADVERTISE_IP` are enabled (see "Call teardown" below).
 
 ## Architecture
 
@@ -51,8 +52,8 @@ other side. Putting the relay on the same docker network sidesteps
 the problem entirely.
 
 LAN mode escapes the bridge by joining `network_mode: host`, so
-softphones outside the VM reach Kamailio and the relay at the
-Colima VM's LAN IP.
+softphones reach Kamailio and the relay at `$ADVERTISE_IP` (a tailnet
+IP by default — see "Reaching it from a real / mobile phone").
 
 ## Prerequisites
 
@@ -304,6 +305,14 @@ If you ever see calls that don't hang up, check the startup log line
 `advertising <ip> in Record-Route/Via` and confirm `<ip>` is reachable
 from the phones.
 
+A second teardown trap: some UAs (e.g. Linphone desktop) answer with a
+GRUU-style Contact at the proxy domain
+(`sip:user@$ADVERTISE_IP;gr=...`), so the peer's in-dialog BYE comes
+back addressed to kamailio itself and would loop on localhost instead
+of reaching the callee. The cfg declares `$ADVERTISE_IP` as an `alias`
+and re-resolves such self-addressed in-dialog requests via
+`lookup("location")`, so a hangup from either side tears down both.
+
 ### Tear down
 
 ```sh
@@ -324,6 +333,8 @@ docker compose -f compose.yml -f compose.lan.yml down
 | Reachable address for real phones    | `$ADVERTISE_IP` — set by `tailscale-lan.sh` (tailnet IP) or exported manually; the single knob for both SIP + media |
 | Registrar destination (relay)        | `kamailio.cfg`, `rtpengine_sock` line — `#!ifdef LAN_MODE` selects loopback vs docker DNS |
 | SIP advertise address (LAN)          | `kamailio.cfg` `listen ... advertise ADVERTISE_PLACEHOLDER` — sed'd to `$ADVERTISE_IP` by the kamailio entrypoint; fixes in-dialog BYE routing |
+| In-dialog requests to GRUU/proxy Contacts | `kamailio.cfg` — `alias` + `if (uri==myself) lookup("location")` re-resolves them to the real binding so BYE/ACK reach the callee |
+| Relay readiness gate                 | `compose.yml` — relay `healthcheck` (port 4003) + kamailio `depends_on: condition: service_healthy`, so kamailio's rtpengine link doesn't race the relay's boot |
 | Relay UDP port range                 | `ex_kamailio` `port_range` config (`config/config.exs`) |
 | Codec / payload types                | `RelayHandler.answer_for/1` — `[0, 101]`  |
 | Per-call recordings location         | `RelayHandler.Pipeline` — `@recordings_dir`, mounted from `./recordings` |

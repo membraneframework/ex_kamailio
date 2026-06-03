@@ -1,34 +1,10 @@
-# Tailscale sidecar overlay. Layer on top of compose.yml + compose.lan.yml
-# to make the relay stack reachable from a softphone on ANY network — your
-# phone on Wi-Fi, on cellular, behind NAT, anywhere — without touching the
-# router. This is the most reproducible way to run the example off a clean
-# clone: the steps are identical on macOS, Linux and Windows and don't
-# depend on the local LAN.
+# Tailscale sidecar overlay (on top of compose.yml + compose.lan.yml) so the
+# stack is reachable from a softphone on any network. The container brings up
+# a real tailscale0 in the host netns, which the host-net kamailio/relay then
+# advertise on. Run it via ./tailscale-lan.sh; details in README.md.
 #
-# How it works: this container joins the host network namespace and brings
-# up a real `tailscale0` kernel interface in it. Because `kamailio` and
-# `relay` (from compose.lan.yml) are also `network_mode: host`, they share
-# that namespace and so they bind/advertise on the tailnet IP for free.
-# ADVERTISE_IP is set to that 100.x.y.z address (the helper script does it).
-#
-# Usage — just run the helper, which sequences all of this for you:
-#   export TS_AUTHKEY=tskey-...   # generate at
-#                                 # https://login.tailscale.com/admin/settings/keys
-#   ./tailscale-lan.sh
-#
-# Or by hand:
-#   export TS_AUTHKEY=tskey-...
-#   docker compose -f compose.yml -f compose.lan.yml -f compose.tailscale.yml up -d tailscale
-#   export ADVERTISE_IP=$(docker compose -f compose.yml -f compose.lan.yml -f compose.tailscale.yml exec -T tailscale tailscale ip -4)
-#   docker compose -f compose.yml -f compose.lan.yml -f compose.tailscale.yml up -d --build kamailio relay
-#
-# Then install the Tailscale app on the phone, sign into the same tailnet,
-# and point the softphone at sip:<user>@$ADVERTISE_IP:5060 (UDP).
-#
-# Requires a kernel TUN device in the VM (/dev/net/tun); the default Colima
-# VM has it. If TUN is unavailable, tailscale falls back to userspace mode,
-# which does NOT expose tailscale0 to the other containers — so kernel mode
-# (TS_USERSPACE=false) is required here.
+# Needs a kernel TUN device (/dev/net/tun); userspace mode wouldn't expose
+# tailscale0 to the other containers, hence TS_USERSPACE=false.
 
 services:
   tailscale:
@@ -40,15 +16,11 @@ services:
     devices:
       - /dev/net/tun
     environment:
-      # Ephemeral, pre-authorized key recommended so the node cleans itself
-      # up when the container stops. Generate one in the admin console.
-      # Optional here (default empty) only so later `down`/`logs` commands
-      # that parse this file don't demand it be re-exported — tailscale-lan.sh
-      # enforces it before ever starting the sidecar.
+      # Optional (default empty) so down/logs don't require it; tailscale-lan.sh
+      # enforces it before starting the sidecar.
       TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_HOSTNAME: relay-handler
       TS_STATE_DIR: /var/lib/tailscale
-      # Kernel networking (real tailscale0) so host-net kamailio/relay see it.
       TS_USERSPACE: "false"
     volumes:
       - tailscale-state:/var/lib/tailscale
