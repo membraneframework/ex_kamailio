@@ -219,6 +219,11 @@ non-empty — `x` is fine). Wherever the table below shows
 (Linphone is on iOS/Android) and — for the Tailscale path — the
 Tailscale app signed into the same tailnet.
 
+> **Media encryption must be None on every client.** The relay does
+> plain RTP only (no SRTP). If a softphone offers `RTP/SAVP` (SRTP), it
+> gets a plain `RTP/AVP` answer and the *caller* drops the call the
+> instant the callee answers. Disable SRTP/ZRTP/DTLS on both ends.
+
 #### Linphone — Account A: alice
 
 `brew install --cask linphone`, open it, click **Third-party SIP
