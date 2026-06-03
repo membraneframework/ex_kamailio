@@ -4,22 +4,23 @@ defmodule RelayHandler do
   Membrane pipeline.
 
   Flow:
-    * `offer/2`  — record the caller's remote endpoint; reply with the local
-      endpoint ex_kamailio just allocated for the caller side.
-    * `answer/2` — both sides are known now; spawn `RelayHandler.Pipeline`
-      and reply with the local endpoint allocated for the callee side.
+    * `offer/2`  — record the caller's remote endpoint; reply with the caller's
+      SDP repointed at the local endpoint ex_kamailio allocated for the caller.
+    * `answer/2` — both sides are known now; spawn `RelayHandler.Pipeline` and
+      reply with the callee's SDP repointed at the callee-side local endpoint.
     * `delete/2` — terminate the pipeline.
 
-  Pipelines are tracked in `RelayHandler.PipelineRegistry` keyed by `call_id`.
+  ex_kamailio keeps a separate handler state per `call_id`, so the pipeline pid
+  lives directly in this call's state.
   """
 
-  @behaviour ExKamailio.Handler
+  use ExKamailio.Handler
 
   require Logger
-  alias ExKamailio.{Endpoint, SDP}
+  alias ExKamailio.SDP
 
   @impl true
-  def init(_opts), do: {:ok, %{}}
+  def init(_opts), do: {:ok, %{pipeline: nil}}
 
   @impl true
   def offer(session, state) do
@@ -28,7 +29,7 @@ defmodule RelayHandler do
         "local=#{inspect(session.caller_local)}"
     )
 
-    {:ok, answer_for(session.caller_local), state}
+    {:ok, SDP.rewrite_endpoint(session.offer_sdp, session.caller_local), state}
   end
 
   @impl true
@@ -39,8 +40,9 @@ defmodule RelayHandler do
     )
 
     case start_pipeline(session) do
-      {:ok, _pid} ->
-        {:ok, answer_for(session.callee_local), state}
+      {:ok, pid} ->
+        {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local),
+         %{state | pipeline: pid}}
 
       {:error, reason} ->
         Logger.error("[relay] pipeline start failed for #{session.call_id}: #{inspect(reason)}")
@@ -51,7 +53,7 @@ defmodule RelayHandler do
   @impl true
   def delete(session, state) do
     Logger.info("[relay] delete call=#{session.call_id}")
-    stop_pipeline(session.call_id)
+    stop_pipeline(state.pipeline)
     {:ok, state}
   end
 
@@ -69,30 +71,11 @@ defmodule RelayHandler do
     }
 
     case Membrane.Pipeline.start_link(RelayHandler.Pipeline, opts) do
-      {:ok, _sup, pid} ->
-        Registry.register(RelayHandler.PipelineRegistry, session.call_id, pid)
-        {:ok, pid}
-
-      other ->
-        other
+      {:ok, _sup, pid} -> {:ok, pid}
+      other -> other
     end
   end
 
-  defp stop_pipeline(call_id) do
-    case Registry.lookup(RelayHandler.PipelineRegistry, call_id) do
-      [{_owner, pid}] ->
-        Registry.unregister(RelayHandler.PipelineRegistry, call_id)
-        Membrane.Pipeline.terminate(pid, asynchronous?: true)
-
-      [] ->
-        :ok
-    end
-  end
-
-  defp answer_for(%Endpoint{ip: ip, rtp_port: rtp, rtcp_port: rtcp}) do
-    SDP.answer_sdp(ip_to_string(ip), rtp, rtcp || rtp + 1, [0, 101], "sendrecv")
-  end
-
-  defp ip_to_string(ip) when is_tuple(ip), do: :inet.ntoa(ip) |> to_string()
-  defp ip_to_string(ip) when is_binary(ip), do: ip
+  defp stop_pipeline(nil), do: :ok
+  defp stop_pipeline(pid), do: Membrane.Pipeline.terminate(pid, asynchronous?: true)
 end

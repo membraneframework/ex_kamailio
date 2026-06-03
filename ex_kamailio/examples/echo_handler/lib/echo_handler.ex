@@ -8,13 +8,10 @@ defmodule EchoHandler do
   (Membrane, FFmpeg, etc.) to do something more interesting.
   """
 
-  @behaviour ExKamailio.Handler
+  use ExKamailio.Handler
 
   require Logger
   alias ExKamailio.SDP
-
-  @impl true
-  def init(_opts), do: {:ok, %{}}
 
   @impl true
   def offer(session, state) do
@@ -22,8 +19,7 @@ defmodule EchoHandler do
       "[echo] offer call=#{session.call_id} remote=#{inspect(session.caller_remote)} local=#{inspect(session.caller_local)}"
     )
 
-    answer = answer_for(session.caller_local)
-    {:ok, answer, state}
+    {:ok, SDP.rewrite_endpoint(session.offer_sdp, session.caller_local), state}
   end
 
   @impl true
@@ -32,17 +28,12 @@ defmodule EchoHandler do
       "[echo] answer call=#{session.call_id} remote=#{inspect(session.callee_remote)} local=#{inspect(session.callee_local)}"
     )
 
-    answer = answer_for(session.callee_local)
-    {:ok, answer, state}
+    {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local), state}
   end
 
   @impl true
   def delete(session, state) do
     Logger.info("[echo] delete call=#{session.call_id}")
     {:ok, state}
-  end
-
-  defp answer_for(%ExKamailio.Endpoint{ip: ip, rtp_port: rtp, rtcp_port: rtcp}) do
-    SDP.answer_sdp(to_string(ip), rtp, rtcp || rtp + 1, [0, 101], "sendrecv")
   end
 end

@@ -26,12 +26,11 @@ defmodule RelayHandler.Pipeline do
   the last inbound packet on that leg arrived from — the symmetric-RTP /
   NAT-traversal behaviour rtpengine itself provides.
 
-  The recording files contain raw codec payload (RTP headers stripped). Both
-  peers are constrained to PCMU (G.711 μ-law) because `RelayHandler.answer_for/1`
-  advertises only payload types `[0, 101]` (PT 0 = PCMU per RFC 3551; PT 101 =
-  telephone-event for DTMF) in the answer SDP — anything else the softphones
-  prefer gets dropped during negotiation. So every recording is μ-law, 8 kHz,
-  mono:
+  The recording files contain raw codec payload (RTP headers stripped). The
+  relay forwards whatever codec the two peers negotiate between themselves —
+  ex_kamailio just repoints their SDP at this box, it doesn't pick codecs. For
+  plain softphone-to-softphone calls that's almost always PCMU (G.711 μ-law,
+  PT 0), so the recordings are μ-law, 8 kHz, mono:
 
       ffplay -f mulaw -ar 8000 -ch_layout mono <call_id>__caller_to_callee.raw
 

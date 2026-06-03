@@ -43,69 +43,53 @@ config :ex_kamailio,
   ws_port: 4003,
 
   # IP advertised in SDP `c=` lines — the address your box is reachable
-  # at from the SIP peers.
-  media_ip: System.get_env("MEDIA_IP", "127.0.0.1"),
+  # at from the SIP peers. Use `:auto` to advertise this host's first
+  # non-loopback IPv4 (see `ExKamailio.Utils.detect_media_ip/0`).
+  media_ip: :auto,
 
   # Pool of UDP ports ex_kamailio will allocate for RTP/RTCP. RTP gets
   # an even port; RTCP is the next odd port.
   port_range: 11_000..40_000,
 
   # Your handler module — implements `ExKamailio.Handler`.
-  handler: MyApp.KamailioHandler,
-
-  # Optional: payload types this peer is willing to terminate. If
-  # omitted, ex_kamailio echoes whatever the offer carried.
-  allowed_pts: [0, 8, 101]
+  handler: MyApp.KamailioHandler
 ```
 
 ## Writing a handler
 
 ```elixir
 defmodule MyApp.KamailioHandler do
-  @behaviour ExKamailio.Handler
+  use ExKamailio.Handler
 
   alias ExKamailio.SDP
 
   @impl true
-  def init(_opts), do: {:ok, %{}}
+  def init(_opts), do: {:ok, %{pipeline: nil}}
 
   @impl true
   def offer(session, state) do
-    # session.caller_local — endpoint ex_kamailio allocated for us
+    # session.caller_local  — endpoint ex_kamailio allocated for us
     # session.caller_remote — what the caller advertised in SDP
-    # session.offer_sdp — full %ExSDP{} struct
+    # session.offer_sdp     — full %ExSDP{} struct
 
-    :ok = MyApp.Pipeline.attach_caller(session.call_id, session.caller_local)
+    {:ok, pid} = MyApp.Pipeline.start(session.call_id, session.caller_local)
 
-    answer = SDP.answer_sdp(
-      to_string(session.caller_local.ip),
-      session.caller_local.rtp_port,
-      session.caller_local.rtcp_port,
-      [0, 101],
-      "sendrecv"
-    )
+    # Forward the caller's SDP, repointed at our local endpoint. The peer's
+    # codecs are preserved — ex_kamailio doesn't pick codecs for you.
+    answer = SDP.rewrite_endpoint(session.offer_sdp, session.caller_local)
 
-    {:ok, answer, state}
+    {:ok, answer, %{state | pipeline: pid}}
   end
 
   @impl true
   def answer(session, state) do
-    :ok = MyApp.Pipeline.attach_callee(session.call_id, session.callee_local)
-
-    answer = SDP.answer_sdp(
-      to_string(session.callee_local.ip),
-      session.callee_local.rtp_port,
-      session.callee_local.rtcp_port,
-      [0, 101],
-      "sendrecv"
-    )
-
+    answer = SDP.rewrite_endpoint(session.answer_sdp, session.callee_local)
     {:ok, answer, state}
   end
 
   @impl true
-  def delete(session, state) do
-    :ok = MyApp.Pipeline.stop(session.call_id)
+  def delete(_session, state) do
+    MyApp.Pipeline.stop(state.pipeline)
     {:ok, state}
   end
 end
@@ -114,6 +98,14 @@ end
 The library handles WebSocket plumbing, Bencode parsing, SDP parsing,
 local port allocation, and session bookkeeping. Your handler decides
 what to do with the media.
+
+`state` is kept **per call** (keyed by `session.call_id`): `init/1` seeds each
+new call, your callbacks receive and return that call's state, and it is dropped
+on `delete/2` — so keeping a pipeline pid in a bare field, as above, is safe even
+with many overlapping calls.
+
+Callbacks return an `%ExSDP{}` struct (build it with
+`SDP.rewrite_endpoint/2`); a raw SDP string is also accepted.
 
 ## Call flow
 

@@ -20,22 +20,32 @@ defmodule ExKamailio.WebSocket do
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{Endpoint, PortPool, SDP, Session, SessionTable}
+  alias ExKamailio.{Endpoint, PortPool, SDP, Session, SessionTable, Utils}
 
   @impl true
   def init(_args) do
     handler_mod = Application.fetch_env!(:ex_kamailio, :handler)
-    {:ok, handler_state} = handler_mod.init(Application.get_env(:ex_kamailio, :handler_opts, []))
+    handler_opts = Application.get_env(:ex_kamailio, :handler_opts, [])
+    {:ok, handler_state} = handler_mod.init(handler_opts)
 
     state = %{
       handler_mod: handler_mod,
-      handler_state: handler_state,
-      media_ip: Application.fetch_env!(:ex_kamailio, :media_ip),
+      # State is kept per call (keyed by call_id); each new call starts from
+      # this seed, the value handler.init/1 returned.
+      seed_state: handler_state,
+      calls: %{},
+      media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip)),
       allowed_pts: MapSet.new(Application.get_env(:ex_kamailio, :allowed_pts, []))
     }
 
     {:ok, state}
   end
+
+  # -- per-call state threading (keyed by call_id) --
+
+  defp handler_state(s, call_id), do: Map.get(s.calls, call_id, s.seed_state)
+  defp put_handler_state(s, call_id, new), do: %{s | calls: Map.put(s.calls, call_id, new)}
+  defp drop_handler_state(s, call_id), do: %{s | calls: Map.delete(s.calls, call_id)}
 
   @impl true
   def handle_in({frame, [opcode: :text]}, state) do
@@ -106,26 +116,26 @@ defmodule ExKamailio.WebSocket do
         offer_sdp: offer_sdp
       }
 
-      case state.handler_mod.offer(session, state.handler_state) do
-        {:ok, reply_sdp, handler_state} ->
+      case state.handler_mod.offer(session, handler_state(state, call_id)) do
+        {:ok, reply_sdp, hstate} ->
           :ok = SessionTable.put(session)
 
           reply =
             encode_reply(cookie, %{
               result: "ok",
-              sdp: reply_sdp,
+              sdp: to_sdp_string(reply_sdp),
               rtp_port: caller_rtp,
               rtcp_port: caller_rtp + 1
             })
 
-          {:push, reply, %{state | handler_state: handler_state}}
+          {:push, reply, put_handler_state(state, call_id, hstate)}
 
-        {:error, reason, handler_state} ->
+        {:error, reason, hstate} ->
           Logger.error("handler offer rejected: #{inspect(reason)}")
           :ok = PortPool.release({call_id, from_tag}, caller_rtp)
 
           {:push, reply_error(cookie, "handler rejected offer"),
-           %{state | handler_state: handler_state}}
+           put_handler_state(state, call_id, hstate)}
       end
     else
       {:error, :no_ports} ->
@@ -178,18 +188,19 @@ defmodule ExKamailio.WebSocket do
           answer_sdp: answer_sdp
       }
 
-      case state.handler_mod.answer(session, state.handler_state) do
-        {:ok, reply_sdp, handler_state} ->
-          :ok = SessionTable.put(%Session{session | answer_reply_sdp: reply_sdp})
-          reply = encode_reply(cookie, %{result: "ok", sdp: reply_sdp})
-          {:push, reply, %{state | handler_state: handler_state}}
+      case state.handler_mod.answer(session, handler_state(state, call_id)) do
+        {:ok, reply_sdp, hstate} ->
+          wire_sdp = to_sdp_string(reply_sdp)
+          :ok = SessionTable.put(%Session{session | answer_reply_sdp: wire_sdp})
+          reply = encode_reply(cookie, %{result: "ok", sdp: wire_sdp})
+          {:push, reply, put_handler_state(state, call_id, hstate)}
 
-        {:error, reason, handler_state} ->
+        {:error, reason, hstate} ->
           Logger.error("handler answer rejected: #{inspect(reason)}")
           :ok = PortPool.release({call_id, to_tag}, callee_rtp)
 
           {:push, reply_error(cookie, "handler rejected answer"),
-           %{state | handler_state: handler_state}}
+           put_handler_state(state, call_id, hstate)}
       end
     else
       nil ->
@@ -216,10 +227,11 @@ defmodule ExKamailio.WebSocket do
 
     case SessionTable.get(call_id) do
       %Session{} = session ->
-        {:ok, handler_state} = state.handler_mod.delete(session, state.handler_state)
+        {:ok, _hstate} = state.handler_mod.delete(session, handler_state(state, call_id))
         release_session_ports(session)
         :ok = SessionTable.delete(call_id)
-        {:push, encode_reply(cookie, %{result: "ok"}), %{state | handler_state: handler_state}}
+
+        {:push, encode_reply(cookie, %{result: "ok"}), drop_handler_state(state, call_id)}
 
       nil ->
         {:push, reply_error(cookie, "unknown call"), state}
@@ -233,6 +245,9 @@ defmodule ExKamailio.WebSocket do
   end
 
   # -- bencode/wire helpers --
+
+  defp to_sdp_string(sdp) when is_binary(sdp), do: sdp
+  defp to_sdp_string(%ExSDP{} = sdp), do: to_string(sdp)
 
   defp encode_reply(cookie, payload) do
     body = payload |> Bento.encode!() |> IO.iodata_to_binary()

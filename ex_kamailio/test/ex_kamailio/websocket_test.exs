@@ -12,15 +12,14 @@ defmodule ExKamailio.WebSocketTest do
     @impl true
     def offer(session, state) do
       send(state.calls, {:offer_called, session})
-      answer = SDP.answer_sdp("192.0.2.1", 30_000, 30_001, [0, 101], "sendrecv")
-      {:ok, answer, state}
+      # Return an %ExSDP{} struct (the canonical API) — the library serializes it.
+      {:ok, SDP.rewrite_endpoint(session.offer_sdp, session.caller_local), state}
     end
 
     @impl true
     def answer(session, state) do
       send(state.calls, {:answer_called, session})
-      answer = SDP.answer_sdp("192.0.2.1", 30_002, 30_003, [0, 101], "sendrecv")
-      {:ok, answer, state}
+      {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local), state}
     end
 
     @impl true
@@ -109,7 +108,9 @@ defmodule ExKamailio.WebSocketTest do
       assert decoded["result"] == "ok"
       assert is_integer(decoded["rtp_port"])
       assert decoded["rtcp_port"] == decoded["rtp_port"] + 1
-      assert String.contains?(decoded["sdp"], "RTP/AVP")
+      # reply SDP is a serialized string carrying the offered codecs (forwarded)
+      assert is_binary(decoded["sdp"])
+      assert decoded["sdp"] =~ "RTP/AVP 0 101"
 
       assert_receive {:offer_called, session}
       assert session.call_id == "call-1"
@@ -205,6 +206,53 @@ defmodule ExKamailio.WebSocketTest do
       assert_receive {:offer_called, _}
       assert_receive {:delete_called, _}
       assert SessionTable.get("call-4") == nil
+    end
+  end
+
+  defmodule MarkingHandler do
+    @behaviour ExKamailio.Handler
+
+    @impl true
+    def init(opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
+
+    @impl true
+    def offer(session, state) do
+      reply = SDP.rewrite_endpoint(session.offer_sdp, session.caller_local)
+      {:ok, reply, %{state | mark: session.call_id}}
+    end
+
+    @impl true
+    def answer(session, state),
+      do: {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local), state}
+
+    @impl true
+    def delete(session, state) do
+      send(state.report_to, {:deleted, session.call_id, state.mark})
+      {:ok, state}
+    end
+  end
+
+  describe "per-call state" do
+    test "interleaved calls keep independent state" do
+      Application.put_env(:ex_kamailio, :handler, MarkingHandler)
+      Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
+      {:ok, state} = WebSocket.init([])
+
+      offer = fn cid, ftag ->
+        frame("aaaaa", %{command: "offer", "call-id": cid, "from-tag": ftag, sdp: @offer_sdp})
+      end
+
+      # Two calls offered back-to-back over the same connection.
+      {:push, _, state} = WebSocket.handle_in({offer.("call-A", "fa"), [opcode: :text]}, state)
+      {:push, _, state} = WebSocket.handle_in({offer.("call-B", "fb"), [opcode: :text]}, state)
+
+      del = fn cid -> frame("aaaac", %{command: "delete", "call-id": cid}) end
+      {:push, _, state} = WebSocket.handle_in({del.("call-A"), [opcode: :text]}, state)
+      {:push, _, _state} = WebSocket.handle_in({del.("call-B"), [opcode: :text]}, state)
+
+      # Each delete sees its OWN call's mark, not the last-written one.
+      assert_receive {:deleted, "call-A", "call-A"}
+      assert_receive {:deleted, "call-B", "call-B"}
     end
   end
 

@@ -20,8 +20,10 @@ Each leg's output also fans through a `Membrane.Tee.Parallel` into an
 per-direction recordings into `docker/recordings/` —
 `<call_id>__caller_to_callee.raw` and `<call_id>__callee_to_caller.raw`.
 That's the on-disk proof that the audio actually transited the
-Membrane pipeline. The codec is hardcoded to **PCMU** (G.711 μ-law,
-8 kHz, mono) by `RelayHandler.answer_for/1`, so playback is always:
+Membrane pipeline. The codec is whatever the two peers negotiate
+(ex_kamailio forwards their SDP rather than picking codecs); for plain
+softphones that's almost always **PCMU** (G.711 μ-law, 8 kHz, mono), so
+playback is usually:
 
 ```sh
 ffplay -f mulaw -ar 8000 -ch_layout mono \
@@ -72,5 +74,6 @@ flow above instead.
 ## Limitations
 
 - RTP only — RTCP is not relayed yet.
-- PCMU codec is hardcoded in `RelayHandler.answer_for/1`.
-- One pipeline per call; crash isolation is per-call.
+- Codecs are whatever the two peers negotiate; recordings/playback assume
+  PCMU (μ-law). ex_kamailio forwards the SDP, it doesn't transcode.
+- One pipeline per call, kept in the handler's per-call state.

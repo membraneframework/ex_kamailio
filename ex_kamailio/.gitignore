@@ -5,6 +5,9 @@ deps/
 mix.lock
 erl_crash.dump
 
+# Generated docs (ex_doc)
+doc/
+
 # Ignored examples build/deps trees too
 examples/*/_build/
 examples/*/deps/

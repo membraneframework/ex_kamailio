@@ -13,8 +13,7 @@ defmodule RelayHandler.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
-      mod: {RelayHandler.Application, []}
+      extra_applications: [:logger]
     ]
   end
 
