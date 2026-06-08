@@ -12,7 +12,6 @@ defmodule ExKamailio.WebSocketTest do
     @impl true
     def offer(session, state) do
       send(state.calls, {:offer_called, session})
-      # Return an %ExSDP{} struct (the canonical API) — the library serializes it.
       {:ok, SDP.rewrite_endpoint(session.offer_sdp, session.caller_local), state}
     end
 
@@ -108,7 +107,6 @@ defmodule ExKamailio.WebSocketTest do
       assert decoded["result"] == "ok"
       assert is_integer(decoded["rtp_port"])
       assert decoded["rtcp_port"] == decoded["rtp_port"] + 1
-      # reply SDP is a serialized string carrying the offered codecs (forwarded)
       assert is_binary(decoded["sdp"])
       assert decoded["sdp"] =~ "RTP/AVP 0 101"
 
@@ -254,10 +252,8 @@ defmodule ExKamailio.WebSocketTest do
     end
 
     test "per-call state survives across pooled connections (offer and delete on different WS)" do
-      # Kamailio pools several WebSocket connections and spreads one call's
-      # commands across them. Per-call state must therefore live in the shared
-      # SessionTable, not in a single WS process — so a delete arriving on a
-      # different connection than the offer still sees what the handler stored.
+      # offer and delete arrive on different pooled connections; per-call state
+      # lives in the shared SessionTable, so delete still sees what offer stored.
       Application.put_env(:ex_kamailio, :handler, MarkingHandler)
       Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
 

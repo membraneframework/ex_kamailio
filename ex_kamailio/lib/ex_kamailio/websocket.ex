@@ -30,11 +30,8 @@ defmodule ExKamailio.WebSocket do
 
     state = %{
       handler_mod: handler_mod,
-      # Seed each new call's handler state with what handler.init/1 returned.
-      # The live per-call state lives in the Session (global, keyed by call_id),
-      # not here: Kamailio pools several WebSocket connections and spreads one
-      # call's offer/answer/delete across them, so per-connection state wouldn't
-      # be visible to every command of the same call.
+      # Seeds each new call's handler state; the live per-call state lives in
+      # the Session (global, keyed by call_id) — see ExKamailio.Session.
       seed_state: handler_state,
       media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip)),
       allowed_pts: MapSet.new(Application.get_env(:ex_kamailio, :allowed_pts, []))

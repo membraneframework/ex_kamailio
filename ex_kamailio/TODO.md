@@ -31,6 +31,22 @@ codecs. That left some code with no caller:
   keep as a monorepo subdir) and fix `source_url` / HexDocs source links /
   `package: [files: ...]` accordingly.
 
+## Robustness / known gaps (pre-existing)
+
+Noticed while debugging the Kamailio connection-pool behavior; neither is new,
+both are worth hardening:
+
+- **`init/1` runs once per pooled WebSocket connection** (~8×), not once per
+  call. Fine for a stateless seed like `{:ok, %{}}`, but a handler that does
+  heavy or side-effectful setup in `init/1` will repeat it per connection.
+  Either document this clearly, or seed per-call lazily on the first `offer`.
+
+- **An offered-but-never-`delete`d call leaks its caller RTP port.**
+  `SessionTable` GC drops the stale session after 30 min but does not call
+  `PortPool.release/2` — only `delete` frees ports. If Kamailio ever fails to
+  send `delete` (some cancel/failure paths), that port stays checked out.
+  GC should release the ports of any session it reaps.
+
 ## Roadmap (from README "Status")
 
 Not yet implemented; out of scope for the current pass:
