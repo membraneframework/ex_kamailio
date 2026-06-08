@@ -9,7 +9,8 @@ RUN apt-get update \
         kamailio-lwsc-modules \
     && rm -rf /var/lib/apt/lists/*
 
-COPY kamailio.cfg /etc/kamailio/kamailio.cfg
+# kamailio.cfg is not baked in — compose.yml bind-mounts the library's
+# priv/kamailio/kamailio.cfg at /etc/kamailio/kamailio.cfg.
 
 EXPOSE 5060/udp
 

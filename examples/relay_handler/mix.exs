@@ -27,7 +27,10 @@ defmodule RelayHandler.MixProject do
       {:membrane_file_plugin, "~> 0.17.3"},
       {:membrane_g711_ffmpeg_plugin, "~> 0.1.5"},
       {:membrane_rtp_g711_plugin, "~> 0.3.3"},
-      {:membrane_wav_plugin, "~> 0.10.2"}
+      {:membrane_wav_plugin, "~> 0.10.2"},
+      # WebSocket client used by the `mix kamailio.smoke` task to fake-drive
+      # ex_kamailio over the loopback, no real Kamailio required.
+      {:mint_web_socket, "~> 1.0", only: [:dev, :test], runtime: false}
     ]
   end
 end

@@ -10,7 +10,7 @@ defmodule Mix.Tasks.Kamailio.Smoke do
   Run it in one terminal after starting the example app in another:
 
       # terminal 1
-      iex -S mix       # boots ex_kamailio + echo_handler on :4003
+      iex -S mix       # boots ex_kamailio + relay_handler on :4003
 
       # terminal 2
       mix kamailio.smoke

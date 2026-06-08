@@ -63,6 +63,8 @@ services:
 
   kamailio:
     build: ./kamailio
+    volumes:
+      - ../../../priv/kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
     # Wait until the relay's control socket is actually listening, not just
     # until its container has started — otherwise kamailio's first
     # rtpengine WebSocket connect races the relay's boot and the node gets
@@ -87,7 +89,7 @@ services:
       - "6000/udp"
 
   sipp-uas:
-    build: ../../echo_handler/docker/sipp
+    build: ./sipp
     volumes:
       - ./sipp/uas.xml:/scenarios/uas.xml:ro
     # Templates the SDP at startup so it advertises `sink`'s IP, then runs
@@ -111,7 +113,7 @@ services:
   # sipp-register` after sipp-uas is up; this populates Kamailio's
   # location table so the UAC's INVITE has somewhere to be routed.
   sipp-register:
-    build: ../../echo_handler/docker/sipp
+    build: ./sipp
     volumes:
       - ./sipp/register.xml:/scenarios/register.xml:ro
     command:
@@ -127,7 +129,7 @@ services:
       - sipp-uas
 
   sipp-uac:
-    build: ../../echo_handler/docker/sipp
+    build: ./sipp
     volumes:
       - ./sipp/uac.xml:/scenarios/uac.xml:ro
       - ./sipp/tone.pcap:/scenarios/tone.pcap:ro

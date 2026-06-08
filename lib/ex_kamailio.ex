@@ -16,7 +16,7 @@ defmodule ExKamailio do
         handler: MyApp.KamailioHandler
 
   See `ExKamailio.Handler` for the callback contract and the
-  `examples/echo_handler` directory for a runnable end-to-end demo.
+  `examples/relay_handler` directory for a runnable end-to-end demo.
 
   [rtpengine]: https://github.com/sipwise/rtpengine
   """

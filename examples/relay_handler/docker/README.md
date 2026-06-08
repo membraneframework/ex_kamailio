@@ -331,6 +331,10 @@ docker compose -f compose.yml -f compose.lan.yml down
 
 ## Configuration seams
 
+`kamailio.cfg` below is the library-provided reference config at
+`priv/kamailio/kamailio.cfg` (repo root), bind-mounted into the `kamailio`
+container by `compose.yml`.
+
 | Concern                              | Where                                      |
 |--------------------------------------|--------------------------------------------|
 | SDP-advertised media IP              | `MEDIA_IP` env in compose (bridge = `auto`, the container's own IP; LAN = `$ADVERTISE_IP`) |

@@ -14,6 +14,37 @@ functionality; it's a reminder so the decisions don't get lost.
   repo is still named `ex_media` while the package is `ex_kamailio` — decide
   whether to rename the GitHub repo before publishing.
 
+## Library-provided `kamailio.cfg` (`priv/kamailio/kamailio.cfg`)
+
+The library now ships a reference config so users don't hand-roll one. It was
+lifted as-is from the relay demo; two follow-ups make it a clean general-purpose
+file rather than a demo artifact.
+
+### Demo-specific → parameterize, don't rewrite
+
+1. **rtpengine socket URL** (`cfg:45-50`) — hardcodes `ws://relay:4003` /
+   `ws://127.0.0.1:4003` behind the `LAN_MODE` ifdef. This is *the* ex_kamailio
+   integration point; in a library cfg it should read an env var (e.g.
+   `#!substdef "!RTPENGINE_SOCK!ws://...!"` or `$env(EX_KAMAILIO_SOCK)`).
+2. **Advertise IP** (`cfg:9-14`) — the `ADVERTISE_PLACEHOLDER` + compose-`sed`
+   mechanism is demo glue. Kamailio can take this from an env var directly,
+   dropping the sed entrypoint.
+3. **`LAN_MODE` ifdef naming** — fine to keep, but for a shipped cfg frame it as
+   "host-network vs. bridged" rather than the demo's tailnet story.
+
+### Deliberately omitted → document, don't hide
+
+For "usable beyond the demo," these are the gaps a user must know about:
+
+- **No REGISTER auth** (`cfg:75-81`) — it's an open registrar; anyone can bind.
+  Real use needs `auth`/`auth_db` digest. This is the big one to call out.
+- **`usrloc db_mode=0`** (`cfg:37`) — in-memory, lost on restart. Fine for a
+  demo/single-node; document `db_mode`/DB for persistence/HA.
+- **UDP-only** (`cfg:13`) — no TCP/TLS listener; no WebSocket SIP transport.
+- **SIP-signaling NAT** — media NAT is handled (rtpengine + the relay's
+  `latch?`), but there's no `nathelper`/`fix_nated_register`. Usually
+  unnecessary with a public relay, worth a note.
+
 ## Roadmap (from README "Status")
 
 Not yet implemented; out of scope for the current pass:

@@ -141,13 +141,14 @@ media component you run inside your handler (e.g.
 Two paths, increasing in cost:
 
 1. **Smoke test, no Kamailio needed.** Run
-   `mix kamailio.smoke` from inside `examples/echo_handler`. It
+   `mix kamailio.smoke` from inside `examples/relay_handler`. It
    boots ex_kamailio and connects to it over a real WebSocket on
    loopback, replaying a realistic offer/answer/delete sequence.
-2. **Full SIP path with real Kamailio.** Drive Kamailio (configured
-   with `rtpengine` + `lwsc` modules pointing at ex_kamailio) from
-   SIPp UAC + UAS. See `examples/echo_handler/README.md` for the
-   step-by-step setup, including a working `kamailio.cfg`.
+2. **Full SIP path with real Kamailio.** Drive Kamailio with the
+   library-provided reference config (`priv/kamailio/kamailio.cfg`,
+   which wires up the `rtpengine` + `lwsc` modules pointing at
+   ex_kamailio) from SIPp UAC + UAS. See
+   `examples/relay_handler/docker/README.md` for the step-by-step setup.
 
 ## Status
 
