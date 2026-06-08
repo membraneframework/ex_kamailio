@@ -37,6 +37,11 @@ defmodule ExKamailio.Handler do
   `c:delete/2`. You can safely keep per-call data (a pipeline pid, say) in a
   bare field — overlapping calls never share or overwrite each other's state.
 
+  The state is stored centrally, keyed by `call_id` (not in the WebSocket
+  process), so it is consistent even though Kamailio's rtpengine client pools
+  several WebSocket connections and may deliver one call's `offer`, `answer`
+  and `delete` over different connections.
+
   ## Lifecycle (per call)
 
   1. `c:init/1` seeds the state for the call.

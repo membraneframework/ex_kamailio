@@ -30,22 +30,18 @@ defmodule ExKamailio.WebSocket do
 
     state = %{
       handler_mod: handler_mod,
-      # State is kept per call (keyed by call_id); each new call starts from
-      # this seed, the value handler.init/1 returned.
+      # Seed each new call's handler state with what handler.init/1 returned.
+      # The live per-call state lives in the Session (global, keyed by call_id),
+      # not here: Kamailio pools several WebSocket connections and spreads one
+      # call's offer/answer/delete across them, so per-connection state wouldn't
+      # be visible to every command of the same call.
       seed_state: handler_state,
-      calls: %{},
       media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip)),
       allowed_pts: MapSet.new(Application.get_env(:ex_kamailio, :allowed_pts, []))
     }
 
     {:ok, state}
   end
-
-  # -- per-call state threading (keyed by call_id) --
-
-  defp handler_state(s, call_id), do: Map.get(s.calls, call_id, s.seed_state)
-  defp put_handler_state(s, call_id, new), do: %{s | calls: Map.put(s.calls, call_id, new)}
-  defp drop_handler_state(s, call_id), do: %{s | calls: Map.delete(s.calls, call_id)}
 
   @impl true
   def handle_in({frame, [opcode: :text]}, state) do
@@ -116,9 +112,9 @@ defmodule ExKamailio.WebSocket do
         offer_sdp: offer_sdp
       }
 
-      case state.handler_mod.offer(session, handler_state(state, call_id)) do
+      case state.handler_mod.offer(session, state.seed_state) do
         {:ok, reply_sdp, hstate} ->
-          :ok = SessionTable.put(session)
+          :ok = SessionTable.put(%Session{session | handler_state: hstate})
 
           reply =
             encode_reply(cookie, %{
@@ -128,14 +124,13 @@ defmodule ExKamailio.WebSocket do
               rtcp_port: caller_rtp + 1
             })
 
-          {:push, reply, put_handler_state(state, call_id, hstate)}
+          {:push, reply, state}
 
-        {:error, reason, hstate} ->
+        {:error, reason, _hstate} ->
           Logger.error("handler offer rejected: #{inspect(reason)}")
           :ok = PortPool.release({call_id, from_tag}, caller_rtp)
 
-          {:push, reply_error(cookie, "handler rejected offer"),
-           put_handler_state(state, call_id, hstate)}
+          {:push, reply_error(cookie, "handler rejected offer"), state}
       end
     else
       {:error, :no_ports} ->
@@ -188,19 +183,18 @@ defmodule ExKamailio.WebSocket do
           answer_sdp: answer_sdp
       }
 
-      case state.handler_mod.answer(session, handler_state(state, call_id)) do
+      case state.handler_mod.answer(session, session.handler_state) do
         {:ok, reply_sdp, hstate} ->
           wire_sdp = to_sdp_string(reply_sdp)
-          :ok = SessionTable.put(%Session{session | answer_reply_sdp: wire_sdp})
+          :ok = SessionTable.put(%Session{session | answer_reply_sdp: wire_sdp, handler_state: hstate})
           reply = encode_reply(cookie, %{result: "ok", sdp: wire_sdp})
-          {:push, reply, put_handler_state(state, call_id, hstate)}
+          {:push, reply, state}
 
-        {:error, reason, hstate} ->
+        {:error, reason, _hstate} ->
           Logger.error("handler answer rejected: #{inspect(reason)}")
           :ok = PortPool.release({call_id, to_tag}, callee_rtp)
 
-          {:push, reply_error(cookie, "handler rejected answer"),
-           put_handler_state(state, call_id, hstate)}
+          {:push, reply_error(cookie, "handler rejected answer"), state}
       end
     else
       nil ->
@@ -227,11 +221,11 @@ defmodule ExKamailio.WebSocket do
 
     case SessionTable.get(call_id) do
       %Session{} = session ->
-        {:ok, _hstate} = state.handler_mod.delete(session, handler_state(state, call_id))
+        {:ok, _hstate} = state.handler_mod.delete(session, session.handler_state)
         release_session_ports(session)
         :ok = SessionTable.delete(call_id)
 
-        {:push, encode_reply(cookie, %{result: "ok"}), drop_handler_state(state, call_id)}
+        {:push, encode_reply(cookie, %{result: "ok"}), state}
 
       nil ->
         {:push, reply_error(cookie, "unknown call"), state}

@@ -242,7 +242,6 @@ defmodule ExKamailio.WebSocketTest do
         frame("aaaaa", %{command: "offer", "call-id": cid, "from-tag": ftag, sdp: @offer_sdp})
       end
 
-      # Two calls offered back-to-back over the same connection.
       {:push, _, state} = WebSocket.handle_in({offer.("call-A", "fa"), [opcode: :text]}, state)
       {:push, _, state} = WebSocket.handle_in({offer.("call-B", "fb"), [opcode: :text]}, state)
 
@@ -250,9 +249,28 @@ defmodule ExKamailio.WebSocketTest do
       {:push, _, state} = WebSocket.handle_in({del.("call-A"), [opcode: :text]}, state)
       {:push, _, _state} = WebSocket.handle_in({del.("call-B"), [opcode: :text]}, state)
 
-      # Each delete sees its OWN call's mark, not the last-written one.
       assert_receive {:deleted, "call-A", "call-A"}
       assert_receive {:deleted, "call-B", "call-B"}
+    end
+
+    test "per-call state survives across pooled connections (offer and delete on different WS)" do
+      # Kamailio pools several WebSocket connections and spreads one call's
+      # commands across them. Per-call state must therefore live in the shared
+      # SessionTable, not in a single WS process — so a delete arriving on a
+      # different connection than the offer still sees what the handler stored.
+      Application.put_env(:ex_kamailio, :handler, MarkingHandler)
+      Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
+
+      {:ok, conn_a} = WebSocket.init([])
+      {:ok, conn_b} = WebSocket.init([])
+
+      offer = frame("aaaaa", %{command: "offer", "call-id": "call-X", "from-tag": "fx", sdp: @offer_sdp})
+      {:push, _, _} = WebSocket.handle_in({offer, [opcode: :text]}, conn_a)
+
+      delete = frame("aaaac", %{command: "delete", "call-id": "call-X"})
+      {:push, _, _} = WebSocket.handle_in({delete, [opcode: :text]}, conn_b)
+
+      assert_receive {:deleted, "call-X", "call-X"}
     end
   end
 
