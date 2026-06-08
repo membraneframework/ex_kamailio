@@ -230,7 +230,7 @@ defmodule ExKamailio.WebSocket do
           state.handler_mod.delete(session, session.handler_state)
         end)
 
-        release_session_ports(session)
+        SessionTable.release_ports(session)
         :ok = SessionTable.delete(call_id)
 
         {:push, encode_reply(cookie, %{result: "ok"}), state}
@@ -238,12 +238,6 @@ defmodule ExKamailio.WebSocket do
       nil ->
         {:push, reply_error(cookie, "unknown call"), state}
     end
-  end
-
-  defp release_session_ports(%Session{call_id: id, from_tag: ftag} = s) do
-    if ep = s.caller_local, do: PortPool.release({id, ftag}, ep.rtp_port)
-    if ep = s.callee_local, do: PortPool.release({id, s.to_tag}, ep.rtp_port)
-    :ok
   end
 
   # Run a handler callback, turning any raise/throw/exit into the same
