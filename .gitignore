@@ -17,3 +17,6 @@ examples/*/erl_crash.dump
 # Editor
 .elixir_ls/
 .vscode/
+
+# macOS
+.DS_Store

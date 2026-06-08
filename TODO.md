@@ -25,11 +25,11 @@ codecs. That left some code with no caller:
 - **Tag `v0.1.0`.** `mix.exs` sets `docs: [source_ref: "v#{@version}"]`, but no
   git tag exists yet, so the "source" links in generated HexDocs will 404.
 
-- **`source_url` vs. repo layout.** `mix.exs` points `source_url` at
-  `github.com/membraneframework-labs/ex_media`, but the library lives in the
-  `ex_kamailio/` subdirectory of that repo. Decide the strategy (own repo, or
-  keep as a monorepo subdir) and fix `source_url` / HexDocs source links /
-  `package: [files: ...]` accordingly.
+- **`source_url` / repo name.** The library now lives at the repo root, so
+  `source_url` (`github.com/membraneframework-labs/ex_media`) resolves correctly
+  and HexDocs source links no longer 404 on a subdir. Remaining mismatch: the
+  repo is still named `ex_media` while the package is `ex_kamailio` — decide
+  whether to rename the GitHub repo before publishing.
 
 ## Robustness / known gaps (pre-existing)
 

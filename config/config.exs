@@ -1,15 +1,10 @@
-# config/config.exs
 import Config
 
-config :ex_media,
+config :ex_kamailio,
   ws_port: 4003,
-  # Advertised/local IP for SDP c= and a=rtcp. You can also detect at runtime.
-  media_ip: System.get_env("MEDIA_IP", "192.168.36.76"),
-  # Inclusive port range (will allocate even base for RTP, odd for RTCP)
-  port_range: 11000..40000,
-  command_handler: ExMedia.CommandHandler.Default
+  media_ip: System.get_env("MEDIA_IP", "127.0.0.1"),
+  port_range: 11_000..40_000
 
-config :shine_membrane_pipeline,
-  streams_in_batch: System.get_env("MEMBRANE_STREAMS_IN_BATCH", "8") |> String.to_integer(),
-  tick_time_ms: System.get_env("MEMBRANE_TICK_TIME_MS", "10") |> String.to_integer(),
-  latency_tick_count: System.get_env("MEMBRANE_LATENCY_TICK_COUNT", "6") |> String.to_integer()
+# Tests drive WebSocket.handle_in/2 directly, so let the OS pick an ephemeral
+# port for the embedded Bandit server instead of colliding on 4003.
+if config_env() == :test, do: config(:ex_kamailio, ws_port: 0)
