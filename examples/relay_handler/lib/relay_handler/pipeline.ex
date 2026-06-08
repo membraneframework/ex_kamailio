@@ -3,15 +3,15 @@ defmodule RelayHandler.Pipeline do
   A minimal two-peer RTP relay built from a pair of `Membrane.UDP.Endpoint`s
   wired crosswise. Each leg's output is fanned out through a
   `Tee.Parallel`: one branch forwards toward the other peer, the
-  other branch strips RTP headers and writes the codec payload to
-  `/recordings/<call_id>__<direction>.raw` — proof, on disk, that the
+  other branch strips RTP headers, decodes the μ-law payload and writes a
+  playable `/recordings/<call_id>__<direction>.wav` — proof, on disk, that the
   bytes actually flowed through the Membrane pipeline.
 
       caller (UAC)  <---> :caller_leg <-> :tee_c2c -> probe -> :callee_leg <---> callee (UAS)
-                                              \-> :parser -> :file (caller→callee.raw)
+                                              \-> :parser -> :depay -> :decoder -> :wav -> :file (caller→callee.wav)
 
       callee        <--- :callee_leg <-> :tee_l2l -> probe -> :caller_leg ---> caller
-                                              \-> :parser -> :file (callee→caller.raw)
+                                              \-> :parser -> :depay -> :decoder -> :wav -> :file (callee→caller.wav)
 
   Each leg is bound to the local port the rtpengine protocol allocated for
   that direction and sends out toward *the opposite* party's SDP address:
@@ -26,11 +26,13 @@ defmodule RelayHandler.Pipeline do
   the last inbound packet on that leg arrived from — the symmetric-RTP /
   NAT-traversal behaviour rtpengine itself provides.
 
-  The recording files contain raw codec payload (RTP headers stripped). The
-  `RelayHandler` forces PCMU (G.711 μ-law, PT 0) in the SDP it returns, so the
-  recordings are μ-law, 8 kHz, mono:
+  The `RelayHandler` forces PCMU (G.711 μ-law, PT 0) in the SDP it returns, so
+  the recordings are μ-law, 8 kHz, mono. The record branch decodes that to PCM
+  via `Membrane.G711.FFmpeg.Decoder` (the pure-Elixir `membrane_g711_plugin`
+  only does A-law) and serializes a standard WAV header, so the files play
+  directly:
 
-      ffplay -f mulaw -ar 8000 -ch_layout mono <call_id>__caller_to_callee.raw
+      ffplay <call_id>__caller_to_callee.wav   # or any media player
 
   Limitations:
     * RTP only — RTCP is not relayed.
@@ -39,7 +41,9 @@ defmodule RelayHandler.Pipeline do
   use Membrane.Pipeline
 
   require Membrane.Logger
-  alias Membrane.{Debug, RTP, Tee, UDP.Endpoint}
+  alias Membrane.{Debug, RTP, Tee, UDP.Endpoint, WAV}
+  alias Membrane.G711.FFmpeg.Decoder, as: G711Decoder
+  alias Membrane.RTP.G711.Depayloader, as: G711Depayloader
   alias Membrane.File, as: MFile
   alias ExKamailio.Endpoint, as: EkEndpoint
 
@@ -88,8 +92,8 @@ defmodule RelayHandler.Pipeline do
 
     safe_id = sanitize_call_id(opts.call_id)
     File.mkdir_p!(@recordings_dir)
-    c2c_path = Path.join(@recordings_dir, "#{safe_id}__caller_to_callee.raw")
-    l2l_path = Path.join(@recordings_dir, "#{safe_id}__callee_to_caller.raw")
+    c2c_path = Path.join(@recordings_dir, "#{safe_id}__caller_to_callee.wav")
+    l2l_path = Path.join(@recordings_dir, "#{safe_id}__callee_to_caller.wav")
 
     Membrane.Logger.info("[relay] recording call=#{opts.call_id} to #{c2c_path} / #{l2l_path}")
 
@@ -101,6 +105,9 @@ defmodule RelayHandler.Pipeline do
       |> child(:callee_leg, callee_leg),
       get_child(:tee_caller_to_callee)
       |> child(:parser_caller_to_callee, RTP.Parser)
+      |> child(:depayloader_caller_to_callee, G711Depayloader)
+      |> child(:decoder_caller_to_callee, %G711Decoder{encoding: :PCMU})
+      |> child(:wav_caller_to_callee, WAV.Serializer)
       |> child(:writer_caller_to_callee, %MFile.Sink{location: c2c_path}),
       get_child(:callee_leg)
       |> child(:tee_callee_to_caller, Tee.Parallel),
@@ -109,6 +116,9 @@ defmodule RelayHandler.Pipeline do
       |> get_child(:caller_leg),
       get_child(:tee_callee_to_caller)
       |> child(:parser_callee_to_caller, RTP.Parser)
+      |> child(:depayloader_callee_to_caller, G711Depayloader)
+      |> child(:decoder_callee_to_caller, %G711Decoder{encoding: :PCMU})
+      |> child(:wav_callee_to_caller, WAV.Serializer)
       |> child(:writer_callee_to_caller, %MFile.Sink{location: l2l_path})
     ]
 

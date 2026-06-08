@@ -40,8 +40,9 @@ writes the codec payload to disk.
 The relay pipeline itself (`RelayHandler.Pipeline`) also writes one
 recording **per direction, per call**, using a `Tee.Parallel` that
 fans each leg's output into both the other leg (forward) and a
-`RTP.Parser → File.Sink` branch — proof on disk that the bytes
-actually transited Membrane.
+`RTP.Parser → RTP.G711.Depayloader → G711.FFmpeg.Decoder → WAV.Serializer →
+File.Sink` branch — a playable `.wav` per direction, proof on disk that
+the bytes actually transited Membrane.
 
 ## Why everything runs in containers (Bridge mode)
 
@@ -92,7 +93,7 @@ docker compose logs relay
 [relay] offer  call=…  caller remote=… local=…
 [relay] answer call=…  callee remote=… local=…
 Pipeline<…> [relay] start call=…
-Pipeline<…> [relay] recording call=… to /recordings/…__caller_to_callee.raw / …
+Pipeline<…> [relay] recording call=… to /recordings/…__caller_to_callee.wav / …
 Pipeline<…> [relay] call=… caller→callee=499 pkts, callee→caller=0 pkts
 [relay] delete call=…
 ```
@@ -111,11 +112,12 @@ Two files are produced per call:
 ffplay -f alaw -ar 8000 -ch_layout mono recordings/uas.alaw
 
 # The relay's Tee branch records each direction transiting the Membrane
-# pipeline. PCMU (μ-law) — see "Codec note" below.
-ffplay -f mulaw -ar 8000 -ch_layout mono recordings/<call_id>__caller_to_callee.raw
+# pipeline, decoded to PCM and written as WAV — plays directly.
+ffplay recordings/<call_id>__caller_to_callee.wav
 ```
 
-(`-ch_layout mono` is for ffmpeg 8.x; older ffmpeg uses `-ac 1`.)
+(`-ch_layout mono` on the `uas.alaw` line is for ffmpeg 8.x; older ffmpeg
+uses `-ac 1`.)
 
 The sink keeps a single open fd on `uas.alaw` for its entire lifetime
 — **do not `rm recordings/uas.alaw` while the sink container is
@@ -123,7 +125,7 @@ running**. Deleting the dirent leaves writes going to an unlinked
 inode, and the file never reappears on disk. For a clean capture
 between runs: `docker compose restart sink`.
 
-The relay's per-call `.raw` files are opened fresh each call (one
+The relay's per-call `.wav` files are opened fresh each call (one
 pipeline = one open) so they're safe to delete between calls.
 
 ### Tear down
@@ -267,15 +269,13 @@ Talking into the mic, you should hear your voice on the other device
 
 ### Verify media flowed through Membrane
 
-`RelayHandler.Pipeline` writes the codec payload of each direction
+`RelayHandler.Pipeline` decodes each direction to PCM and writes a WAV
 to disk. After a call, list the recordings and play them back:
 
 ```sh
-ls -la recordings/                 # *.raw files appear, one per direction
-ffplay -f mulaw -ar 8000 -ch_layout mono \
-       recordings/<call_id>__caller_to_callee.raw
-ffplay -f mulaw -ar 8000 -ch_layout mono \
-       recordings/<call_id>__callee_to_caller.raw
+ls -la recordings/                 # *.wav files appear, one per direction
+ffplay recordings/<call_id>__caller_to_callee.wav
+ffplay recordings/<call_id>__callee_to_caller.wav
 ```
 
 If those files exist and play back your actual voice from the call,
@@ -289,11 +289,12 @@ to force PCMU by advertising payload types `[0, 101]` via
 `SDP.answer_sdp/5` (see `RelayHandler.pcmu_sdp/1`) in both the offer and
 answer it returns, so both peers are forced to PCMU regardless of what
 they'd prefer (Opus, G.722, PCMA, …). PT 0 = PCMU (G.711 μ-law, 8 kHz,
-mono) per RFC 3551; PT 101 = telephone-event for DTMF. That's why every
-relay-side `.raw` recording is μ-law and `ffplay -f mulaw -ar 8000
--ch_layout mono` always works. (Swap in `SDP.rewrite_endpoint/2` to forward
-the peers' negotiated codecs instead — but then opus recordings aren't
-directly playable.)
+mono) per RFC 3551; PT 101 = telephone-event for DTMF. The record branch
+decodes that μ-law to PCM (`Membrane.RTP.G711.Depayloader →
+Membrane.G711.FFmpeg.Decoder`) and serializes a WAV, so every relay-side
+`.wav` plays directly. (Swap in `SDP.rewrite_endpoint/2` to forward the
+peers' negotiated codecs instead — but then the record branch's hardcoded
+PCMU decode would need to follow the negotiated codec too.)
 
 ### Call teardown (Record-Route / advertise address)
 

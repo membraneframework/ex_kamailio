@@ -24,7 +24,10 @@ defmodule RelayHandler.MixProject do
       {:membrane_udp_plugin, "~> 0.14.3"},
       {:membrane_tee_plugin, "~> 0.12.0"},
       {:membrane_rtp_plugin, "~> 0.31.3"},
-      {:membrane_file_plugin, "~> 0.17.3"}
+      {:membrane_file_plugin, "~> 0.17.3"},
+      {:membrane_g711_ffmpeg_plugin, "~> 0.1.5"},
+      {:membrane_rtp_g711_plugin, "~> 0.3.3"},
+      {:membrane_wav_plugin, "~> 0.10.2"}
     ]
   end
 end

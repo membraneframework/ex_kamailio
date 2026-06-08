@@ -15,22 +15,18 @@ peer A  <-->  [UDP Endpoint]  <-x->  [UDP Endpoint]  <-->  peer B
 wire convention — `caller_local` is the port advertised in the rewritten
 INVITE, which is the port the *callee* sends to.)
 
-Each leg's output also fans through a `Membrane.Tee.Parallel` into an
-`RTP.Parser → File.Sink` branch, so every bridged call drops two
-per-direction recordings into `docker/recordings/` —
-`<call_id>__caller_to_callee.raw` and `<call_id>__callee_to_caller.raw`.
-That's the on-disk proof that the audio actually transited the
-Membrane pipeline. The codec is whatever the two peers negotiate
-(ex_kamailio forwards their SDP rather than picking codecs); for plain
-softphones that's almost always **PCMU** (G.711 μ-law, 8 kHz, mono), so
-playback is usually:
+Each leg's output also fans through a `Membrane.Tee.Parallel` into a
+`RTP.Parser → RTP.G711.Depayloader → G711.FFmpeg.Decoder → WAV.Serializer →
+File.Sink` branch, so every bridged call drops two per-direction recordings
+into `docker/recordings/` — `<call_id>__caller_to_callee.wav` and
+`<call_id>__callee_to_caller.wav`. That's the on-disk proof that the audio
+actually transited the Membrane pipeline. `RelayHandler` forces **PCMU**
+(G.711 μ-law, 8 kHz, mono) in the SDP it returns; the record branch decodes
+it to PCM and writes a standard WAV header, so the files play directly:
 
 ```sh
-ffplay -f mulaw -ar 8000 -ch_layout mono \
-       docker/recordings/<call_id>__caller_to_callee.raw
+ffplay docker/recordings/<call_id>__caller_to_callee.wav   # or any player
 ```
-
-(`-ch_layout mono` is for ffmpeg 8.x; older ffmpeg uses `-ac 1`.)
 
 ## Run end-to-end
 
