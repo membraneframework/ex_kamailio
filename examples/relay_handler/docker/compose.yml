@@ -34,9 +34,12 @@ services:
       context: ../../..             # repo root of ex_kamailio
       dockerfile: examples/relay_handler/docker/relay/Dockerfile
     environment:
-      # SDP address Kamailio rewrites peer media to. `relay` is the docker
-      # service name; peers resolve it via docker DNS.
-      MEDIA_IP: relay
+      # SDP address Kamailio rewrites peer media to. `auto` makes ex_kamailio
+      # detect the container's own non-loopback IPv4 (e.g. 172.18.0.3) and
+      # advertise that. A docker *hostname* like `relay` does NOT work here:
+      # sipp (and many RTP stacks) parse the SDP c= line with a numeric-only
+      # inet_aton, so a name never becomes a usable RTP destination.
+      MEDIA_IP: auto
     # Mounted so the per-call Tee+File.Sink branches of the Membrane pipeline
     # (RelayHandler.Pipeline) can write codec payloads here for inspection.
     volumes:

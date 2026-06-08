@@ -29,7 +29,17 @@ defmodule RelayHandler do
         "local=#{inspect(session.caller_local)}"
     )
 
-    {:ok, SDP.rewrite_endpoint(session.offer_sdp, session.caller_local), state}
+    {:ok, pcmu_sdp(session.caller_local), state}
+  end
+
+  # Force PCMU (G.711 μ-law) on both legs instead of forwarding the peers'
+  # codecs, so the per-call `.raw` recordings play with
+  # `ffplay -f mulaw -ar 8000 -ch_layout mono`. ex_kamailio stays
+  # codec-agnostic — this is the handler's choice. Swap in
+  # `SDP.rewrite_endpoint(peer_sdp, local)` to forward negotiated codecs (Opus,
+  # etc.) instead, at the cost of un-playable recordings.
+  defp pcmu_sdp(local) do
+    SDP.answer_sdp(local.ip, local.rtp_port, local.rtcp_port, [0, 101], "sendrecv")
   end
 
   @impl true
@@ -41,8 +51,7 @@ defmodule RelayHandler do
 
     case start_pipeline(session) do
       {:ok, pid} ->
-        {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local),
-         %{state | pipeline: pid}}
+        {:ok, pcmu_sdp(session.callee_local), %{state | pipeline: pid}}
 
       {:error, reason} ->
         Logger.error("[relay] pipeline start failed for #{session.call_id}: #{inspect(reason)}")

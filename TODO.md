@@ -7,18 +7,16 @@ functionality; it's a reminder so the decisions don't get lost.
 
 `ex_kamailio` is a **pure SDP forwarder**: it hands the parsed offer/answer to the
 handler and ships back whatever SDP the handler returns. It does NOT decide
-codecs. That left some code with no caller:
+codecs — the handler does (the `relay_handler` example forces PCMU via
+`SDP.answer_sdp/5`; `echo_handler` forwards codecs via `SDP.rewrite_endpoint/2`).
+One bit of library code still has no caller:
 
 - **`SDP.decide_media/2`** and its private helpers (`intersect_pts`,
   `default_pts`, `to_pt_set`, `extract_remote_audio`), plus the **`:allowed_pts`
-  config key.** Originally meant for library-side codec negotiation, now unused.
-  Decide: remove entirely, or document and expose as an opt-in helper for
-  handlers that want to filter codecs themselves.
-
-- **`SDP.answer_sdp/5`** — builds a minimal SDP answer from scratch. Superseded in
-  the examples by `SDP.rewrite_endpoint/2` (which preserves the peer's codecs).
-  Decide: remove, or keep as a from-scratch builder for handlers that don't want
-  to echo the offer.
+  config key.** Originally meant for library-side codec negotiation, now unused
+  (handlers pick codecs with `answer_sdp/5` / `rewrite_endpoint/2` instead).
+  Decide: remove entirely, or document and expose as an opt-in PT-filtering
+  helper for handlers that want it.
 
 ## Before any Hex release
 

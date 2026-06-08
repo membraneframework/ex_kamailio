@@ -284,13 +284,16 @@ off-path UDP shortcut).
 
 ### Codec note
 
-The handler hardcodes `[0, 101]` as the payload types it advertises in
-the answer SDP (see `RelayHandler.answer_for/1`), so both peers are
-forced to PCMU regardless of what they'd prefer (Opus, G.722, PCMA,
-…). PT 0 = PCMU (G.711 μ-law, 8 kHz, mono) per RFC 3551; PT 101 =
-telephone-event for DTMF. That's why every relay-side `.raw`
-recording is μ-law and `ffplay -f mulaw -ar 8000 -ch_layout mono`
-always works.
+`ex_kamailio` itself is codec-agnostic; the `relay_handler` example *chooses*
+to force PCMU by advertising payload types `[0, 101]` via
+`SDP.answer_sdp/5` (see `RelayHandler.pcmu_sdp/1`) in both the offer and
+answer it returns, so both peers are forced to PCMU regardless of what
+they'd prefer (Opus, G.722, PCMA, …). PT 0 = PCMU (G.711 μ-law, 8 kHz,
+mono) per RFC 3551; PT 101 = telephone-event for DTMF. That's why every
+relay-side `.raw` recording is μ-law and `ffplay -f mulaw -ar 8000
+-ch_layout mono` always works. (Swap in `SDP.rewrite_endpoint/2` to forward
+the peers' negotiated codecs instead — but then opus recordings aren't
+directly playable.)
 
 ### Call teardown (Record-Route / advertise address)
 
@@ -329,14 +332,14 @@ docker compose -f compose.yml -f compose.lan.yml down
 
 | Concern                              | Where                                      |
 |--------------------------------------|--------------------------------------------|
-| SDP-advertised media IP              | `MEDIA_IP` env in compose (bridge = `relay` docker name; LAN = `$ADVERTISE_IP`) |
+| SDP-advertised media IP              | `MEDIA_IP` env in compose (bridge = `auto`, the container's own IP; LAN = `$ADVERTISE_IP`) |
 | Reachable address for real phones    | `$ADVERTISE_IP` — set by `tailscale-lan.sh` (tailnet IP) or exported manually; the single knob for both SIP + media |
 | Registrar destination (relay)        | `kamailio.cfg`, `rtpengine_sock` line — `#!ifdef LAN_MODE` selects loopback vs docker DNS |
 | SIP advertise address (LAN)          | `kamailio.cfg` `listen ... advertise ADVERTISE_PLACEHOLDER` — sed'd to `$ADVERTISE_IP` by the kamailio entrypoint; fixes in-dialog BYE routing |
 | In-dialog requests to GRUU/proxy Contacts | `kamailio.cfg` — `alias` + `if (uri==myself) lookup("location")` re-resolves them to the real binding so BYE/ACK reach the callee |
 | Relay readiness gate                 | `compose.yml` — relay `healthcheck` (port 4003) + kamailio `depends_on: condition: service_healthy`, so kamailio's rtpengine link doesn't race the relay's boot |
 | Relay UDP port range                 | `ex_kamailio` `port_range` config (`config/config.exs`) |
-| Codec / payload types                | `RelayHandler.answer_for/1` — `[0, 101]`  |
+| Codec / payload types                | `RelayHandler.pcmu_sdp/1` — `[0, 101]` via `SDP.answer_sdp/5` |
 | Per-call recordings location         | `RelayHandler.Pipeline` — `@recordings_dir`, mounted from `./recordings` |
 
 ## Rollback
@@ -352,7 +355,7 @@ git diff   relay-docker-e2e-v1..HEAD # what changed since
 ## Limitations
 
 - RTP only — RTCP is not relayed.
-- PCMU codec is hardcoded in `RelayHandler.answer_for/1`. Anything
+- The example forces PCMU in `RelayHandler.pcmu_sdp/1`. Anything
   else gets dropped during negotiation.
 - Bridge-mode SIPp self-test is `-m 1` (single call). The stack
   handles multiple calls fine.

@@ -27,10 +27,8 @@ defmodule RelayHandler.Pipeline do
   NAT-traversal behaviour rtpengine itself provides.
 
   The recording files contain raw codec payload (RTP headers stripped). The
-  relay forwards whatever codec the two peers negotiate between themselves —
-  ex_kamailio just repoints their SDP at this box, it doesn't pick codecs. For
-  plain softphone-to-softphone calls that's almost always PCMU (G.711 μ-law,
-  PT 0), so the recordings are μ-law, 8 kHz, mono:
+  `RelayHandler` forces PCMU (G.711 μ-law, PT 0) in the SDP it returns, so the
+  recordings are μ-law, 8 kHz, mono:
 
       ffplay -f mulaw -ar 8000 -ch_layout mono <call_id>__caller_to_callee.raw
 

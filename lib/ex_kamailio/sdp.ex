@@ -5,7 +5,7 @@ defmodule ExKamailio.SDP do
   Thin wrapper over `ExSDP`. Handlers typically call `rewrite_endpoint/2`
   to forward a peer's SDP repointed at their allocated media address
   (preserving the offered codecs); `answer_sdp/5` builds a minimal answer
-  from scratch instead.
+  from scratch instead (e.g. to force a single codec like PCMU).
   """
 
   alias ExKamailio.Endpoint
