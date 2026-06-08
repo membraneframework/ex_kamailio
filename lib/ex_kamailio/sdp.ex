@@ -28,29 +28,6 @@ defmodule ExKamailio.SDP do
   end
 
   @doc """
-  Decide which audio payload types and direction to advertise in the
-  answer, given the remote SDP and a `MapSet` of locally-allowed PTs.
-
-  Falls back to PCMU (0) and `telephone-event` (101) if there is no
-  intersection between remote-offered and locally-allowed PTs.
-  """
-  @spec decide_media(ExSDP.t() | nil, MapSet.t() | [integer()]) :: {[integer()], String.t()}
-  def decide_media(nil, allowed), do: {default_pts(allowed), "sendrecv"}
-
-  def decide_media(%ExSDP{} = sdp, allowed) do
-    {remote_pts, dir} = extract_remote_audio(sdp)
-    allowed_set = to_pt_set(allowed)
-
-    pts =
-      case intersect_pts(remote_pts, allowed_set) do
-        [] -> default_pts(allowed_set)
-        xs -> xs
-      end
-
-    {pts, dir || "sendrecv"}
-  end
-
-  @doc """
   Repoint a parsed SDP at a local endpoint, preserving its codecs.
 
   Returns a copy of `sdp` with the session origin/connection address and the
@@ -144,71 +121,4 @@ defmodule ExKamailio.SDP do
     do: %Endpoint{ip: ip, rtp_port: port}
 
   defp build_endpoint(_port, _), do: nil
-
-  defp extract_remote_audio(%ExSDP{media: media}) do
-    audio = Enum.find(media, fn m -> to_string(m.type) in ["audio", ":audio"] end) || %{}
-    fmt = Map.get(audio, :fmt, [])
-    attributes = Map.get(audio, :attributes, [])
-
-    dir =
-      attributes
-      |> Enum.map(&attr_to_string/1)
-      |> Enum.find(fn s ->
-        String.starts_with?(s, "a=") and
-          String.replace_prefix(s, "a=", "") in [
-            "sendrecv",
-            "sendonly",
-            "recvonly",
-            "inactive"
-          ]
-      end)
-      |> case do
-        nil -> nil
-        "a=" <> d -> d
-        other -> other
-      end
-
-    {fmt, dir}
-  end
-
-  defp attr_to_string(t) when is_tuple(t), do: ""
-  defp attr_to_string(r), do: to_string(r)
-
-  defp intersect_pts(remote_pts, allowed_set) do
-    remote_set = MapSet.new(Enum.map(remote_pts, &normalize_pt/1))
-
-    if MapSet.size(allowed_set) == 0,
-      do: Enum.to_list(remote_set),
-      else: remote_set |> MapSet.intersection(allowed_set) |> Enum.to_list()
-  end
-
-  defp default_pts(allowed) do
-    allowed_set = to_pt_set(allowed)
-    base = [0, 101]
-
-    cond do
-      MapSet.size(allowed_set) == 0 ->
-        base
-
-      true ->
-        Enum.filter(base, &MapSet.member?(allowed_set, &1))
-        |> case do
-          [] -> base
-          xs -> xs
-        end
-    end
-  end
-
-  defp to_pt_set(%MapSet{} = set), do: set
-  defp to_pt_set(list) when is_list(list), do: MapSet.new(Enum.map(list, &normalize_pt/1))
-  defp to_pt_set(_), do: MapSet.new()
-
-  defp normalize_pt(pt) when is_integer(pt), do: pt
-
-  defp normalize_pt(pt) when is_binary(pt) do
-    case Integer.parse(pt) do
-      {i, _} -> i
-      _ -> pt
-    end
-  end
 end

@@ -58,7 +58,6 @@ defmodule ExKamailio.WebSocketTest do
     Application.put_env(:ex_kamailio, :handler, TestHandler)
     Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
     Application.put_env(:ex_kamailio, :media_ip, "192.0.2.1")
-    Application.put_env(:ex_kamailio, :allowed_pts, [0, 101])
     Application.put_env(:ex_kamailio, :port_range, 30_000..30_020)
 
     stop_supervised(PortPool)

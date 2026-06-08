@@ -33,8 +33,7 @@ defmodule ExKamailio.WebSocket do
       # Seeds each new call's handler state; the live per-call state lives in
       # the Session (global, keyed by call_id) — see ExKamailio.Session.
       seed_state: handler_state,
-      media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip)),
-      allowed_pts: MapSet.new(Application.get_env(:ex_kamailio, :allowed_pts, []))
+      media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip))
     }
 
     {:ok, state}

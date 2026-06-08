@@ -27,29 +27,6 @@ defmodule ExKamailio.SDPTest do
     end
   end
 
-  describe "decide_media/2" do
-    test "intersects offered PTs with allowed set" do
-      {:ok, sdp} = SDP.parse(@offer)
-      {pts, dir} = SDP.decide_media(sdp, MapSet.new([0, 101]))
-      assert 0 in pts
-      assert 101 in pts
-      assert dir == "sendrecv"
-    end
-
-    test "falls back to defaults when no allowed PTs overlap" do
-      {:ok, sdp} = SDP.parse(@offer)
-      {pts, _dir} = SDP.decide_media(sdp, MapSet.new([99]))
-      # PCMU + telephone-event
-      assert pts == [0, 101]
-    end
-
-    test "uses sendrecv when remote SDP has no direction attribute" do
-      offer_no_dir = String.replace(@offer, "a=sendrecv\r\n", "")
-      {:ok, sdp} = SDP.parse(offer_no_dir)
-      {_pts, dir} = SDP.decide_media(sdp, MapSet.new([0, 101]))
-      assert dir == "sendrecv"
-    end
-  end
 
   describe "answer_sdp/5" do
     test "produces an answer with the given endpoint and direction" do
