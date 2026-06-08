@@ -16,13 +16,7 @@ functionality; it's a reminder so the decisions don't get lost.
 
 ## Robustness / known gaps (pre-existing)
 
-Noticed while debugging the Kamailio connection-pool behavior; neither is new,
-both are worth hardening:
-
-- **`init/1` runs once per pooled WebSocket connection** (~8×), not once per
-  call. Fine for a stateless seed like `{:ok, %{}}`, but a handler that does
-  heavy or side-effectful setup in `init/1` will repeat it per connection.
-  Either document this clearly, or seed per-call lazily on the first `offer`.
+Noticed while debugging the Kamailio connection-pool behavior; worth hardening:
 
 - **An offered-but-never-`delete`d call leaks its caller RTP port.**
   `SessionTable` GC drops the stale session after 30 min but does not call

@@ -24,15 +24,9 @@ defmodule ExKamailio.WebSocket do
 
   @impl true
   def init(_args) do
-    handler_mod = Application.fetch_env!(:ex_kamailio, :handler)
-    handler_opts = Application.get_env(:ex_kamailio, :handler_opts, [])
-    {:ok, handler_state} = handler_mod.init(handler_opts)
-
     state = %{
-      handler_mod: handler_mod,
-      # Seeds each new call's handler state; the live per-call state lives in
-      # the Session (global, keyed by call_id) — see ExKamailio.Session.
-      seed_state: handler_state,
+      handler_mod: Application.fetch_env!(:ex_kamailio, :handler),
+      handler_opts: Application.get_env(:ex_kamailio, :handler_opts, []),
       media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip))
     }
 
@@ -108,7 +102,15 @@ defmodule ExKamailio.WebSocket do
         offer_sdp: offer_sdp
       }
 
-      case state.handler_mod.offer(session, state.seed_state) do
+      # init/1 seeds this call's handler state; the live state then lives in the
+      # Session (global, keyed by call_id) and is threaded through answer/delete.
+      result =
+        safe_callback("offer", fn ->
+          {:ok, seed_state} = state.handler_mod.init(state.handler_opts)
+          state.handler_mod.offer(session, seed_state)
+        end)
+
+      case result do
         {:ok, reply_sdp, hstate} ->
           :ok = SessionTable.put(%Session{session | handler_state: hstate})
 
@@ -179,7 +181,12 @@ defmodule ExKamailio.WebSocket do
           answer_sdp: answer_sdp
       }
 
-      case state.handler_mod.answer(session, session.handler_state) do
+      result =
+        safe_callback("answer", fn ->
+          state.handler_mod.answer(session, session.handler_state)
+        end)
+
+      case result do
         {:ok, reply_sdp, hstate} ->
           wire_sdp = to_sdp_string(reply_sdp)
           :ok = SessionTable.put(%Session{session | answer_reply_sdp: wire_sdp, handler_state: hstate})
@@ -217,7 +224,12 @@ defmodule ExKamailio.WebSocket do
 
     case SessionTable.get(call_id) do
       %Session{} = session ->
-        {:ok, _hstate} = state.handler_mod.delete(session, session.handler_state)
+        # Best-effort teardown: even if the handler's delete crashes, we still
+        # release ports and drop the session so a buggy handler can't leak them.
+        safe_callback("delete", fn ->
+          state.handler_mod.delete(session, session.handler_state)
+        end)
+
         release_session_ports(session)
         :ok = SessionTable.delete(call_id)
 
@@ -232,6 +244,26 @@ defmodule ExKamailio.WebSocket do
     if ep = s.caller_local, do: PortPool.release({id, ftag}, ep.rtp_port)
     if ep = s.callee_local, do: PortPool.release({id, s.to_tag}, ep.rtp_port)
     :ok
+  end
+
+  # Run a handler callback, turning any raise/throw/exit into the same
+  # `{:error, reason, _}` reply the callback could have returned itself. A buggy
+  # handler thus rejects one call cleanly instead of crashing the shared,
+  # connection-pooled WebSocket process.
+  defp safe_callback(label, fun) do
+    fun.()
+  rescue
+    e ->
+      Logger.error(
+        "handler #{label} crashed: #{Exception.message(e)}\n" <>
+          Exception.format_stacktrace(__STACKTRACE__)
+      )
+
+      {:error, {:crash, e}, nil}
+  catch
+    kind, reason ->
+      Logger.error("handler #{label} #{inspect(kind)}: #{inspect(reason)}")
+      {:error, {kind, reason}, nil}
   end
 
   # -- bencode/wire helpers --

@@ -269,6 +269,45 @@ defmodule ExKamailio.WebSocketTest do
     end
   end
 
+  defmodule CrashingHandler do
+    @behaviour ExKamailio.Handler
+
+    @impl true
+    def init(_opts), do: {:ok, %{}}
+
+    @impl true
+    def offer(_s, _st), do: raise "boom"
+
+    @impl true
+    def answer(_s, _st), do: raise "boom"
+
+    @impl true
+    def delete(_s, st), do: {:ok, st}
+  end
+
+  describe "handler crash" do
+    test "a raising offer becomes an error reply, not a WS process crash" do
+      Application.put_env(:ex_kamailio, :handler, CrashingHandler)
+      {:ok, state} = WebSocket.init([])
+
+      msg =
+        frame("aaaaa", %{
+          command: "offer",
+          "call-id": "call-crash",
+          "from-tag": "f1",
+          sdp: @offer_sdp
+        })
+
+      # A normal {:push, ...} return (rather than a raised exception) proves the
+      # WS process survived; the reply is a clean rtpengine error.
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+      assert SessionTable.get("call-crash") == nil
+    end
+  end
+
   describe "garbage in" do
     test "returns error for unknown command", %{state: state} do
       msg = frame("aaaaa", %{command: "wat"})
