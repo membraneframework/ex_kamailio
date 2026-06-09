@@ -1,7 +1,7 @@
 defmodule ExKamailio.SessionTableTest do
   use ExUnit.Case, async: false
 
-  alias ExKamailio.{Endpoint, PortPool, Session, SessionTable}
+  alias ExKamailio.{Session, SessionTable}
 
   defmodule GcHandler do
     @behaviour ExKamailio.Handler
@@ -49,20 +49,13 @@ defmodule ExKamailio.SessionTableTest do
     assert is_integer(SessionTable.get("abc").touched_at)
   end
 
-  test "gc reaps a stale session: runs handler.delete and releases its ports" do
-    Application.put_env(:ex_kamailio, :port_range, 40_000..40_010)
+  test "gc reaps a stale session: runs handler.delete and drops it" do
     Application.put_env(:ex_kamailio, :handler, GcHandler)
-    stop_supervised(PortPool)
-    {:ok, _} = start_supervised(PortPool)
-
-    {:ok, {rtp, _}} = PortPool.checkout({"stale", "f1"})
-    assert Map.has_key?(:sys.get_state(PortPool).allocated, {"stale", "f1"})
 
     stale = %Session{
       call_id: "stale",
       from_tag: "f1",
       state: :offered,
-      caller_local: %Endpoint{ip: {127, 0, 0, 1}, rtp_port: rtp, rtcp_port: rtp + 1},
       handler_state: %{report_to: self()},
       touched_at: System.monotonic_time(:second) - 31 * 60
     }
@@ -75,6 +68,5 @@ defmodule ExKamailio.SessionTableTest do
 
     assert_receive :gc_deleted
     assert SessionTable.get("stale") == nil
-    refute Map.has_key?(:sys.get_state(PortPool).allocated, {"stale", "f1"})
   end
 end

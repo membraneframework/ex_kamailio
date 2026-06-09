@@ -42,18 +42,15 @@ config :ex_kamailio,
   # rtpengine WebSocket connection.
   ws_port: 4003,
 
-  # IP advertised in SDP `c=` lines — the address your box is reachable
-  # at from the SIP peers. Use `:auto` to advertise this host's first
-  # non-loopback IPv4 (see `ExKamailio.Utils.detect_media_ip/0`).
-  media_ip: :auto,
-
-  # Pool of UDP ports ex_kamailio will allocate for RTP/RTCP. RTP gets
-  # an even port; RTCP is the next odd port.
-  port_range: 11_000..40_000,
-
   # Your handler module — implements `ExKamailio.Handler`.
   handler: MyApp.KamailioHandler
 ```
+
+ex_kamailio is a pure SDP shuttle: it owns no media ports and picks no
+codecs. Your handler binds its own sockets and advertises them in the SDP it
+returns. The advertised IP is the handler's choice too —
+`ExKamailio.Utils.detect_media_ip/0` is a handy default (this host's first
+non-loopback IPv4).
 
 ## Writing a handler
 
@@ -68,36 +65,39 @@ defmodule MyApp.KamailioHandler do
 
   @impl true
   def offer(session, state) do
-    # session.caller_local  — endpoint ex_kamailio allocated for us
-    # session.caller_remote — what the caller advertised in SDP
+    # session.caller_remote — what the caller advertised in SDP (parsed for you)
     # session.offer_sdp     — full %ExSDP{} struct
 
-    {:ok, pid} = MyApp.Pipeline.start(session.call_id, session.caller_local)
+    # You own the media: bind your own socket / start a pipeline leg, then
+    # advertise the endpoint you bound. `local` is an `%ExKamailio.Endpoint{}`
+    # (ip + rtp_port) you choose.
+    {:ok, local, pid} = MyApp.Media.open(session.call_id, session.caller_remote)
 
-    # Forward the caller's SDP, repointed at our local endpoint. The peer's
+    # Forward the caller's SDP, repointed at your local endpoint. The peer's
     # codecs are preserved — ex_kamailio doesn't pick codecs for you.
-    answer = SDP.rewrite_endpoint(session.offer_sdp, session.caller_local)
+    answer = SDP.rewrite_endpoint(session.offer_sdp, local)
 
     {:ok, answer, %{state | pipeline: pid}}
   end
 
   @impl true
   def answer(session, state) do
-    answer = SDP.rewrite_endpoint(session.answer_sdp, session.callee_local)
+    {:ok, local} = MyApp.Media.add_callee(state.pipeline, session.callee_remote)
+    answer = SDP.rewrite_endpoint(session.answer_sdp, local)
     {:ok, answer, state}
   end
 
   @impl true
   def delete(_session, state) do
-    MyApp.Pipeline.stop(state.pipeline)
+    MyApp.Media.stop(state.pipeline)
     {:ok, state}
   end
 end
 ```
 
-The library handles WebSocket plumbing, Bencode parsing, SDP parsing,
-local port allocation, and session bookkeeping. Your handler decides
-what to do with the media.
+The library handles WebSocket plumbing, Bencode parsing, SDP parsing, and
+per-call session bookkeeping. Your handler owns the media — it binds its own
+sockets / allocates its own ports and decides what to do with the stream.
 
 `state` is kept **per call** (keyed by `session.call_id`): `init/1` seeds each
 new call, your callbacks receive and return that call's state, and it is dropped
@@ -112,29 +112,29 @@ Callbacks return an `%ExSDP{}` struct (build it with
 1. Caller (A) sends `INVITE` + SDP to Kamailio.
 2. Kamailio forwards the SDP to `ex_kamailio` over the rtpengine
    WebSocket as an `offer` command.
-3. `ex_kamailio` parses the SDP, allocates a local RTP/RTCP port pair
-   for the caller, and calls `c:ExKamailio.Handler.offer/2`.
-4. Your handler returns an answer SDP. `ex_kamailio` sends it back to
-   Kamailio, which puts it into the `INVITE` forwarded to callee (B).
+3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.Handler.offer/2`.
+   Your handler binds its media socket and returns an answer SDP
+   advertising it.
+4. `ex_kamailio` sends that SDP back to Kamailio, which puts it into the
+   `INVITE` forwarded to callee (B).
 5. Callee replies `200 OK` + SDP. Kamailio forwards as an `answer`
-   command. `ex_kamailio` allocates a callee-side port and calls
-   `c:ExKamailio.Handler.answer/2`.
+   command and `ex_kamailio` calls `c:ExKamailio.Handler.answer/2`.
 6. Your handler returns an SDP for caller; `ex_kamailio` ships it back.
 7. On call teardown, Kamailio sends `delete`, ex_kamailio calls
-   `c:ExKamailio.Handler.delete/2`, and the ports return to the pool.
+   `c:ExKamailio.Handler.delete/2`, and your handler releases whatever it
+   allocated.
 
 ## NAT and dynamic IPs
 
 Clients are typically behind NAT — the IPs in their SDPs are not the
 addresses the RTP actually arrives from. The standard solution is
-symmetric RTP (latching): you bind a UDP socket on the local port
-ex_kamailio allocated for the peer, wait for the first inbound packet,
-read the source IP/port from the headers, and from then on send to
-that observed address.
+symmetric RTP (latching): bind a UDP socket on the local port you
+advertised, wait for the first inbound packet, read the source IP/port
+from the headers, and from then on send to that observed address.
 
-ex_kamailio does the port allocation; the latching belongs in the
-media component you run inside your handler (e.g.
-`Membrane.UDP.Source`).
+Both the port and the latching belong in the media component you run
+inside your handler (e.g. `Membrane.UDP.Source`); `ex_kamailio` is not
+involved in the media path at all.
 
 ## Testing
 

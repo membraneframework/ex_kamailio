@@ -5,12 +5,15 @@ defmodule ExKamailio.WebSocket do
 
   Each Kamailio connection produces one WebSocket process, which:
 
-  1. Calls `c:ExKamailio.Handler.init/1` to set up per-connection state.
+  1. Calls `c:ExKamailio.Handler.init/1` to set up per-call state.
   2. On each incoming Bencode frame, decodes the `<cookie> <payload>`
-     wire format, allocates local media ports for `offer`/`answer`,
-     builds an `ExKamailio.Session`, and dispatches to the user's
-     `Handler` callbacks.
+     wire format, parses the SDP into an `ExKamailio.Session`, and
+     dispatches to the user's `Handler` callbacks.
   3. Encodes the handler's reply SDP back to Bencode and pushes it.
+
+  The library is a pure SDP shuttle: it does not allocate media ports or
+  pick codecs. The handler owns its media endpoints and advertises them in
+  the SDP it returns.
 
   This module is the only ex_kamailio code that talks the rtpengine
   protocol directly. Everything user-facing flows through
@@ -20,14 +23,13 @@ defmodule ExKamailio.WebSocket do
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{Endpoint, PortPool, SDP, Session, SessionTable, Utils}
+  alias ExKamailio.{SDP, Session, SessionTable}
 
   @impl true
   def init(_args) do
     state = %{
       handler_mod: Application.fetch_env!(:ex_kamailio, :handler),
-      handler_opts: Application.get_env(:ex_kamailio, :handler_opts, []),
-      media_ip: Utils.resolve_media_ip(Application.fetch_env!(:ex_kamailio, :media_ip))
+      handler_opts: Application.get_env(:ex_kamailio, :handler_opts, [])
     }
 
     {:ok, state}
@@ -78,26 +80,18 @@ defmodule ExKamailio.WebSocket do
     {:push, reply_error(cookie, "unsupported"), state}
   end
 
-  # -- offer: allocate local port for caller, hand off to user handler --
+  # -- offer: parse SDP, hand off to user handler --
 
   defp do_offer(cookie, cmd, state) do
     call_id = fetch_id(cmd, "call-id")
     from_tag = fetch_id(cmd, "from-tag")
     offer_sdp_text = Map.get(cmd, "sdp")
 
-    with {:ok, offer_sdp} <- SDP.parse(offer_sdp_text),
-         {:ok, {caller_rtp, _}} <- PortPool.checkout({call_id, from_tag}) do
-      caller_local = %Endpoint{
-        ip: state.media_ip,
-        rtp_port: caller_rtp,
-        rtcp_port: caller_rtp + 1
-      }
-
+    with {:ok, offer_sdp} <- SDP.parse(offer_sdp_text) do
       session = %Session{
         call_id: call_id,
         from_tag: from_tag,
         state: :offered,
-        caller_local: caller_local,
         caller_remote: SDP.first_audio_endpoint(offer_sdp),
         offer_sdp: offer_sdp
       }
@@ -113,34 +107,20 @@ defmodule ExKamailio.WebSocket do
       case result do
         {:ok, reply_sdp, hstate} ->
           :ok = SessionTable.put(%Session{session | handler_state: hstate})
-
-          reply =
-            encode_reply(cookie, %{
-              result: "ok",
-              sdp: to_sdp_string(reply_sdp),
-              rtp_port: caller_rtp,
-              rtcp_port: caller_rtp + 1
-            })
-
-          {:push, reply, state}
+          {:push, encode_reply(cookie, %{result: "ok", sdp: to_sdp_string(reply_sdp)}), state}
 
         {:error, reason, _hstate} ->
           Logger.error("handler offer rejected: #{inspect(reason)}")
-          :ok = PortPool.release({call_id, from_tag}, caller_rtp)
-
           {:push, reply_error(cookie, "handler rejected offer"), state}
       end
     else
-      {:error, :no_ports} ->
-        {:push, reply_error(cookie, "port pool exhausted"), state}
-
       {:error, reason} ->
         Logger.error("offer SDP parse failed: #{inspect(reason)}")
         {:push, reply_error(cookie, "invalid sdp"), state}
     end
   end
 
-  # -- answer: allocate local port for callee, finalize session --
+  # -- answer: parse SDP, finalize session --
 
   defp do_answer(cookie, cmd, state) do
     call_id = fetch_id(cmd, "call-id")
@@ -164,19 +144,11 @@ defmodule ExKamailio.WebSocket do
 
   defp do_fresh_answer(cookie, call_id, to_tag, answer_sdp_text, prior_session, state) do
     with %Session{state: :offered} = session <- prior_session,
-         {:ok, answer_sdp} <- SDP.parse(answer_sdp_text),
-         {:ok, {callee_rtp, _}} <- PortPool.checkout({call_id, to_tag}) do
-      callee_local = %Endpoint{
-        ip: state.media_ip,
-        rtp_port: callee_rtp,
-        rtcp_port: callee_rtp + 1
-      }
-
+         {:ok, answer_sdp} <- SDP.parse(answer_sdp_text) do
       session = %Session{
         session
         | state: :answered,
           to_tag: to_tag,
-          callee_local: callee_local,
           callee_remote: SDP.first_audio_endpoint(answer_sdp),
           answer_sdp: answer_sdp
       }
@@ -189,14 +161,19 @@ defmodule ExKamailio.WebSocket do
       case result do
         {:ok, reply_sdp, hstate} ->
           wire_sdp = to_sdp_string(reply_sdp)
-          :ok = SessionTable.put(%Session{session | answer_reply_sdp: wire_sdp, handler_state: hstate})
+
+          :ok =
+            SessionTable.put(%Session{
+              session
+              | answer_reply_sdp: wire_sdp,
+                handler_state: hstate
+            })
+
           reply = encode_reply(cookie, %{result: "ok", sdp: wire_sdp})
           {:push, reply, state}
 
         {:error, reason, _hstate} ->
           Logger.error("handler answer rejected: #{inspect(reason)}")
-          :ok = PortPool.release({call_id, to_tag}, callee_rtp)
-
           {:push, reply_error(cookie, "handler rejected answer"), state}
       end
     else
@@ -207,9 +184,6 @@ defmodule ExKamailio.WebSocket do
       %Session{state: actual} ->
         Logger.warning("late answer for call_id=#{inspect(call_id)} in state=#{inspect(actual)}")
         {:push, reply_error(cookie, "unknown call"), state}
-
-      {:error, :no_ports} ->
-        {:push, reply_error(cookie, "port pool exhausted"), state}
 
       {:error, reason} ->
         Logger.error("answer SDP parse failed: #{inspect(reason)}")
@@ -225,12 +199,11 @@ defmodule ExKamailio.WebSocket do
     case SessionTable.get(call_id) do
       %Session{} = session ->
         # Best-effort teardown: even if the handler's delete crashes, we still
-        # release ports and drop the session so a buggy handler can't leak them.
+        # drop the session so a buggy handler can't leak it.
         safe_callback("delete", fn ->
           state.handler_mod.delete(session, session.handler_state)
         end)
 
-        SessionTable.release_ports(session)
         :ok = SessionTable.delete(call_id)
 
         {:push, encode_reply(cookie, %{result: "ok"}), state}

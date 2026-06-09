@@ -27,7 +27,6 @@ defmodule ExKamailio.SDPTest do
     end
   end
 
-
   describe "answer_sdp/5" do
     test "produces an answer with the given endpoint and direction" do
       body = SDP.answer_sdp("192.0.2.10", 40_000, 40_001, [0, 101], "sendrecv")

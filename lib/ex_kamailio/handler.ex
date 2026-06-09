@@ -4,10 +4,12 @@ defmodule ExKamailio.Handler do
 
   Implement this behaviour to plug your own media-handling logic into
   ex_kamailio. The library handles the rtpengine protocol details
-  (WebSocket transport, Bencode encoding, local port allocation,
-  session bookkeeping, SDP parsing). Your handler decides what to do
-  with the media — bridge it through a Membrane pipeline, transcode
-  it via FFmpeg, log it, forward it elsewhere, etc.
+  (WebSocket transport, Bencode encoding, session bookkeeping, SDP
+  parsing) and stays a pure SDP shuttle — it does not allocate media
+  ports or pick codecs. Your handler owns the media: it binds its own
+  sockets, advertises them in the SDP it returns, and decides what to do
+  with the stream — bridge it through a Membrane pipeline, transcode it
+  via FFmpeg, log it, forward it elsewhere, etc.
 
       defmodule MyApp.KamailioHandler do
         use ExKamailio.Handler
@@ -46,14 +48,15 @@ defmodule ExKamailio.Handler do
 
   1. `c:init/1` seeds the state for the call.
   2. `c:offer/2` is called when Kamailio relays an SDP offer from the
-     caller. The library has already allocated `session.caller_local`
-     for you. Return the SDP to send back to Kamailio (which will be
-     forwarded to the callee in an `INVITE`).
-  3. `c:answer/2` is called when Kamailio relays the SDP answer from
-     the callee. `session.callee_local` is already allocated. Return
-     the SDP that will be forwarded back to the caller in `200 OK`.
+     caller (`session.offer_sdp`; the caller's media address is parsed
+     into `session.caller_remote` for convenience). Bind your own media
+     socket and return the SDP — advertising your address — to send back
+     to Kamailio (which forwards it to the callee in an `INVITE`).
+  3. `c:answer/2` is called when Kamailio relays the SDP answer from the
+     callee (`session.answer_sdp` / `session.callee_remote`). Return the
+     SDP that will be forwarded back to the caller in `200 OK`.
   4. `c:delete/2` is called when Kamailio tears down the call; its state
-     is then dropped.
+     is then dropped. Release whatever media resources you allocated here.
 
   All callbacks may return `{:error, reason, state}`, which causes
   ex_kamailio to reply to Kamailio with a Bencode error and skip any

@@ -3,15 +3,15 @@ defmodule ExKamailio.SessionTable do
   ETS-backed store of active calls, keyed by SIP call-id.
 
   A periodic GC sweep reaps sessions older than 30 minutes. Reaping runs the
-  handler's `c:ExKamailio.Handler.delete/2` and releases the session's media
-  ports — the same teardown a Kamailio `delete` performs — so a call that never
-  received a `delete` doesn't leak a pipeline or its RTP ports.
+  handler's `c:ExKamailio.Handler.delete/2` — the same teardown a Kamailio
+  `delete` performs — so a call that never received a `delete` doesn't leak
+  whatever media resources the handler set up.
   """
 
   use GenServer
   require Logger
 
-  alias ExKamailio.{PortPool, Session}
+  alias ExKamailio.Session
 
   @table :ex_kamailio_sessions
   @idx_from_tag :ex_kamailio_idx_from
@@ -86,26 +86,12 @@ defmodule ExKamailio.SessionTable do
     end
   end
 
-  @doc """
-  Release the RTP ports a session reserved for its caller/callee legs.
-
-  Mirrors the port cleanup a clean `delete` does; shared by the WebSocket
-  delete path and by GC reaping.
-  """
-  @spec release_ports(Session.t()) :: :ok
-  def release_ports(%Session{call_id: id, from_tag: ftag} = s) do
-    if ep = s.caller_local, do: PortPool.release({id, ftag}, ep.rtp_port)
-    if ep = s.callee_local, do: PortPool.release({id, s.to_tag}, ep.rtp_port)
-    :ok
-  end
-
   # A session GC found stale never got a Kamailio `delete`. Tear it down the same
   # way a delete would — run the handler's delete callback (best-effort, so a
-  # crashing handler can't take down the GC) and release its ports — then drop it.
+  # crashing handler can't take down the GC) — then drop it.
   defp reap(call_id, %Session{} = sess) do
     Logger.warning("GC reaping stale session call_id=#{call_id}")
     safe_handler_delete(sess)
-    release_ports(sess)
     delete(call_id)
   end
 

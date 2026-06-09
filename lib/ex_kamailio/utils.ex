@@ -35,7 +35,8 @@ defmodule ExKamailio.Utils do
   Resolve a configured `media_ip` value. `:auto` (or `"auto"`) triggers
   `detect_media_ip/0`; any other value is used verbatim.
   """
-  @spec resolve_media_ip(:auto | String.t() | :inet.ip_address()) :: String.t() | :inet.ip_address()
+  @spec resolve_media_ip(:auto | String.t() | :inet.ip_address()) ::
+          String.t() | :inet.ip_address()
   def resolve_media_ip(media_ip) when media_ip in [:auto, "auto"] do
     ip = detect_media_ip()
     Logger.info("media_ip: :auto resolved to #{ip}")

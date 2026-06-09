@@ -7,7 +7,6 @@ defmodule ExKamailio.Application do
     ws_port = Application.fetch_env!(:ex_kamailio, :ws_port)
 
     children = [
-      ExKamailio.PortPool,
       ExKamailio.SessionTable,
       {Bandit, plug: ExKamailio.Router, scheme: :http, port: ws_port}
     ]

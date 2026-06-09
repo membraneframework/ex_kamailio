@@ -1,10 +1,14 @@
 defmodule ExKamailio.WebSocketTest do
   use ExUnit.Case, async: false
 
-  alias ExKamailio.{PortPool, SDP, SessionTable, WebSocket}
+  alias ExKamailio.{SDP, SessionTable, WebSocket}
+
+  # The handler owns its media endpoint now; each test handler picks a fixed one.
 
   defmodule TestHandler do
     @behaviour ExKamailio.Handler
+
+    @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
 
     @impl true
     def init(opts), do: {:ok, %{calls: opts[:report_to] || self()}}
@@ -12,13 +16,13 @@ defmodule ExKamailio.WebSocketTest do
     @impl true
     def offer(session, state) do
       send(state.calls, {:offer_called, session})
-      {:ok, SDP.rewrite_endpoint(session.offer_sdp, session.caller_local), state}
+      {:ok, SDP.rewrite_endpoint(session.offer_sdp, @local), state}
     end
 
     @impl true
     def answer(session, state) do
       send(state.calls, {:answer_called, session})
-      {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local), state}
+      {:ok, SDP.rewrite_endpoint(session.answer_sdp, @local), state}
     end
 
     @impl true
@@ -57,12 +61,8 @@ defmodule ExKamailio.WebSocketTest do
   setup do
     Application.put_env(:ex_kamailio, :handler, TestHandler)
     Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
-    Application.put_env(:ex_kamailio, :media_ip, "192.0.2.1")
-    Application.put_env(:ex_kamailio, :port_range, 30_000..30_020)
 
-    stop_supervised(PortPool)
     stop_supervised(SessionTable)
-    {:ok, _} = start_supervised(PortPool)
     {:ok, _} = start_supervised(SessionTable)
 
     {:ok, state} = WebSocket.init([])
@@ -90,7 +90,7 @@ defmodule ExKamailio.WebSocketTest do
   end
 
   describe "offer" do
-    test "invokes handler with parsed session and replies with allocated ports", %{state: state} do
+    test "invokes handler with parsed session and replies with the handler's SDP", %{state: state} do
       msg =
         frame("aaaaa", %{
           command: "offer",
@@ -104,16 +104,14 @@ defmodule ExKamailio.WebSocketTest do
 
       decoded = decode!(reply)
       assert decoded["result"] == "ok"
-      assert is_integer(decoded["rtp_port"])
-      assert decoded["rtcp_port"] == decoded["rtp_port"] + 1
       assert is_binary(decoded["sdp"])
       assert decoded["sdp"] =~ "RTP/AVP 0 101"
+      assert decoded["sdp"] =~ "m=audio 30000"
 
       assert_receive {:offer_called, session}
       assert session.call_id == "call-1"
       assert session.from_tag == "f1"
       assert session.state == :offered
-      assert session.caller_local.rtp_port == decoded["rtp_port"]
       assert session.caller_remote.rtp_port == 49_170
     end
 
@@ -209,18 +207,20 @@ defmodule ExKamailio.WebSocketTest do
   defmodule MarkingHandler do
     @behaviour ExKamailio.Handler
 
+    @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
+
     @impl true
     def init(opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
 
     @impl true
     def offer(session, state) do
-      reply = SDP.rewrite_endpoint(session.offer_sdp, session.caller_local)
+      reply = SDP.rewrite_endpoint(session.offer_sdp, @local)
       {:ok, reply, %{state | mark: session.call_id}}
     end
 
     @impl true
     def answer(session, state),
-      do: {:ok, SDP.rewrite_endpoint(session.answer_sdp, session.callee_local), state}
+      do: {:ok, SDP.rewrite_endpoint(session.answer_sdp, @local), state}
 
     @impl true
     def delete(session, state) do
@@ -259,7 +259,9 @@ defmodule ExKamailio.WebSocketTest do
       {:ok, conn_a} = WebSocket.init([])
       {:ok, conn_b} = WebSocket.init([])
 
-      offer = frame("aaaaa", %{command: "offer", "call-id": "call-X", "from-tag": "fx", sdp: @offer_sdp})
+      offer =
+        frame("aaaaa", %{command: "offer", "call-id": "call-X", "from-tag": "fx", sdp: @offer_sdp})
+
       {:push, _, _} = WebSocket.handle_in({offer, [opcode: :text]}, conn_a)
 
       delete = frame("aaaac", %{command: "delete", "call-id": "call-X"})
@@ -276,10 +278,10 @@ defmodule ExKamailio.WebSocketTest do
     def init(_opts), do: {:ok, %{}}
 
     @impl true
-    def offer(_s, _st), do: raise "boom"
+    def offer(_s, _st), do: raise("boom")
 
     @impl true
-    def answer(_s, _st), do: raise "boom"
+    def answer(_s, _st), do: raise("boom")
 
     @impl true
     def delete(_s, st), do: {:ok, st}
