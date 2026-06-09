@@ -91,8 +91,8 @@ defmodule Mix.Tasks.Kamailio.Smoke do
     expect!(conn, "00004", "delete reply")
 
     case offer_reply do
-      %{"result" => "ok", "rtp_port" => p, "rtcp_port" => q} ->
-        IO.puts("✓ ex_kamailio allocated local media ports #{p}/#{q} for the caller")
+      %{"result" => "ok", "sdp" => sdp} ->
+        IO.puts("✓ handler answered the offer; advertised SDP:\n#{sdp}")
 
       _ ->
         IO.puts("⚠ offer reply was unexpected: #{inspect(offer_reply)}")

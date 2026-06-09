@@ -343,9 +343,9 @@ container by `compose.yml`.
 | SIP advertise address (LAN)          | `kamailio.cfg` `listen ... advertise ADVERTISE_PLACEHOLDER` — sed'd to `$ADVERTISE_IP` by the kamailio entrypoint; fixes in-dialog BYE routing |
 | In-dialog requests to GRUU/proxy Contacts | `kamailio.cfg` — `alias` + `if (uri==myself) lookup("location")` re-resolves them to the real binding so BYE/ACK reach the callee |
 | Relay readiness gate                 | `compose.yml` — relay `healthcheck` (port 4003) + kamailio `depends_on: condition: service_healthy`, so kamailio's rtpengine link doesn't race the relay's boot |
-| Relay UDP port range                 | `ex_kamailio` `port_range` config (`config/config.exs`) |
+| Relay UDP port range                 | `RelayHandler.PortPool` — `:relay_handler` `port_range` config (`config/config.exs`) |
 | Codec / payload types                | `RelayHandler.pcmu_sdp/1` — `[0, 101]` via `SDP.answer_sdp/5` |
-| Per-call recordings location         | `RelayHandler.Pipeline` — `@recordings_dir`, mounted from `./recordings` |
+| Per-call recordings location         | `RECORDINGS_DIR` env (compose sets `/recordings`, mounted from `./recordings`); host default `recordings/` |
 
 ## Rollback
 

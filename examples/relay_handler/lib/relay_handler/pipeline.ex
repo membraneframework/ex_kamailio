@@ -1,148 +1,127 @@
 defmodule RelayHandler.Pipeline do
   @moduledoc """
-  A minimal two-peer RTP relay built from a pair of `Membrane.UDP.Endpoint`s
-  wired crosswise. Each leg's output is fanned out through a
-  `Tee.Parallel`: one branch forwards toward the other peer, the
-  other branch strips RTP headers, decodes the μ-law payload and writes a
-  playable `/recordings/<call_id>__<direction>.wav` — proof, on disk, that the
-  bytes actually flowed through the Membrane pipeline.
+  Per-call RTP relay, built one leg at a time as the SIP dialog progresses.
 
-      caller (UAC)  <---> :caller_leg <-> :tee_c2c -> probe -> :callee_leg <---> callee (UAS)
-                                              \-> :parser -> :depay -> :decoder -> :wav -> :file (caller→callee.wav)
+  ex_kamailio is a pure SDP shuttle — it allocates no ports and owns no media.
+  This pipeline (and the ports it binds) is entirely the handler's
+  responsibility, and it grows with the call:
 
-      callee        <--- :callee_leg <-> :tee_l2l -> probe -> :caller_leg ---> caller
-                                              \-> :parser -> :depay -> :decoder -> :wav -> :file (callee→caller.wav)
+    * On `offer`, `RelayHandler` starts this pipeline with the **callee→caller**
+      leg: a `Membrane.UDP.Source` bound to the local port advertised to the
+      callee, forwarding to the caller's SDP address. No media flows yet — the
+      callee hasn't answered — but the socket is bound, so the advertised port
+      is real.
+    * On `answer`, the handler sends `{:add_leg, port, dest}` and the
+      **caller→callee** leg is added: a source bound to the port advertised to
+      the caller, forwarding to the callee's SDP address.
 
-  Each leg is bound to the local port the rtpengine protocol allocated for
-  that direction and sends out toward *the opposite* party's SDP address:
+  Each leg fans its inbound RTP out through a `Tee.Parallel`: one branch
+  forwards to the far party (`UDP.Sink`); the other decodes the μ-law payload
+  and writes a playable `/recordings/<call_id>__<direction>.wav` — proof, on
+  disk, that the bytes flowed through Membrane.
 
-  * `:caller_leg` is the "talk to the caller" socket. It listens on
-    `callee_local` (the port the caller was told to send to in the rewritten
-    answer SDP) and sends to `caller_remote` (the caller's SDP address).
-  * `:callee_leg` is symmetric for the callee side.
+  `RelayHandler` forces PCMU (G.711 μ-law, PT 0), so recordings are μ-law,
+  8 kHz, mono; the record branch decodes to PCM via `Membrane.G711.FFmpeg`
+  (the pure-Elixir `membrane_g711_plugin` only does A-law) and serializes a WAV
+  header, so the files play directly:
 
-  Both legs run with `latch?: true`, so each leg's outbound destination
-  starts at the address from the peer's SDP and then follows whatever source
-  the last inbound packet on that leg arrived from — the symmetric-RTP /
-  NAT-traversal behaviour rtpengine itself provides.
-
-  The `RelayHandler` forces PCMU (G.711 μ-law, PT 0) in the SDP it returns, so
-  the recordings are μ-law, 8 kHz, mono. The record branch decodes that to PCM
-  via `Membrane.G711.FFmpeg.Decoder` (the pure-Elixir `membrane_g711_plugin`
-  only does A-law) and serializes a standard WAV header, so the files play
-  directly:
-
-      ffplay <call_id>__caller_to_callee.wav   # or any media player
+      ffplay <call_id>__caller_to_callee.wav
 
   Limitations:
     * RTP only — RTCP is not relayed.
+    * No symmetric-RTP latching: each leg sends to the address from the peer's
+      SDP. Fine on a routable network; a NAT'd peer would need latching, which
+      belongs to a bidirectional leg.
   """
 
   use Membrane.Pipeline
 
   require Membrane.Logger
-  alias Membrane.{Debug, RTP, Tee, UDP.Endpoint, WAV}
+  alias Membrane.{Debug, RTP, Tee, UDP, WAV}
   alias Membrane.G711.FFmpeg.Decoder, as: G711Decoder
   alias Membrane.RTP.G711.Depayloader, as: G711Depayloader
   alias Membrane.File, as: MFile
   alias ExKamailio.Endpoint, as: EkEndpoint
 
-  @recordings_dir "/recordings"
-
   @type opts :: %{
           call_id: String.t(),
           local_ip: :inet.socket_address(),
-          caller_local: EkEndpoint.t(),
-          caller_remote: EkEndpoint.t(),
-          callee_local: EkEndpoint.t(),
-          callee_remote: EkEndpoint.t()
+          listen_port: :inet.port_number(),
+          send_to: EkEndpoint.t()
         }
 
   @impl true
   def handle_init(_ctx, opts) do
-    Membrane.Logger.info(
-      "[relay] start call=#{opts.call_id} " <>
-        "caller local=#{inspect(opts.caller_local)} remote=#{inspect(opts.caller_remote)} " <>
-        "callee local=#{inspect(opts.callee_local)} remote=#{inspect(opts.callee_remote)}"
-    )
-
-    # The rtpengine wire convention: `caller_local` is the port advertised in
-    # the rewritten *INVITE* — i.e. the port the *callee* sends to. Symmetric
-    # for `callee_local`. So the leg that "talks to the caller" listens on
-    # `callee_local` (where the caller's RTP lands) and sends out toward
-    # `caller_remote`.
-    caller_leg = %Endpoint{
-      local_address: opts.local_ip,
-      local_port_no: opts.callee_local.rtp_port,
-      destination_address: opts.caller_remote.ip,
-      destination_port_no: opts.caller_remote.rtp_port,
-      latch?: true
-    }
-
-    callee_leg = %Endpoint{
-      local_address: opts.local_ip,
-      local_port_no: opts.caller_local.rtp_port,
-      destination_address: opts.callee_remote.ip,
-      destination_port_no: opts.callee_remote.rtp_port,
-      latch?: true
-    }
-
-    caller_to_callee = :counters.new(1, [])
-    callee_to_caller = :counters.new(1, [])
-
+    recordings_dir = Application.get_env(:relay_handler, :recordings_dir, "recordings")
+    File.mkdir_p!(recordings_dir)
     safe_id = sanitize_call_id(opts.call_id)
-    File.mkdir_p!(@recordings_dir)
-    c2c_path = Path.join(@recordings_dir, "#{safe_id}__caller_to_callee.wav")
-    l2l_path = Path.join(@recordings_dir, "#{safe_id}__callee_to_caller.wav")
-
-    Membrane.Logger.info("[relay] recording call=#{opts.call_id} to #{c2c_path} / #{l2l_path}")
-
-    spec = [
-      child(:caller_leg, caller_leg)
-      |> child(:tee_caller_to_callee, Tee.Parallel),
-      get_child(:tee_caller_to_callee)
-      |> child(:probe_caller_to_callee, %Debug.Filter{handle_buffer: tally(caller_to_callee)})
-      |> child(:callee_leg, callee_leg),
-      get_child(:tee_caller_to_callee)
-      |> child(:parser_caller_to_callee, RTP.Parser)
-      |> child(:depayloader_caller_to_callee, G711Depayloader)
-      |> child(:decoder_caller_to_callee, %G711Decoder{encoding: :PCMU})
-      |> child(:wav_caller_to_callee, WAV.Serializer)
-      |> child(:writer_caller_to_callee, %MFile.Sink{location: c2c_path}),
-      get_child(:callee_leg)
-      |> child(:tee_callee_to_caller, Tee.Parallel),
-      get_child(:tee_callee_to_caller)
-      |> child(:probe_callee_to_caller, %Debug.Filter{handle_buffer: tally(callee_to_caller)})
-      |> get_child(:caller_leg),
-      get_child(:tee_callee_to_caller)
-      |> child(:parser_callee_to_caller, RTP.Parser)
-      |> child(:depayloader_callee_to_caller, G711Depayloader)
-      |> child(:decoder_callee_to_caller, %G711Decoder{encoding: :PCMU})
-      |> child(:wav_callee_to_caller, WAV.Serializer)
-      |> child(:writer_callee_to_caller, %MFile.Sink{location: l2l_path})
-    ]
 
     state = %{
       call_id: opts.call_id,
-      caller_to_callee: caller_to_callee,
-      callee_to_caller: callee_to_caller,
-      c2c_path: c2c_path,
-      l2l_path: l2l_path
+      local_ip: opts.local_ip,
+      safe_id: safe_id,
+      recordings_dir: recordings_dir,
+      counters: %{
+        caller_to_callee: :counters.new(1, []),
+        callee_to_caller: :counters.new(1, [])
+      }
     }
 
+    Membrane.Logger.info(
+      "[relay] start call=#{opts.call_id} callee→caller leg: " <>
+        "listen :#{opts.listen_port} -> #{inspect(opts.send_to)}"
+    )
+
+    spec = leg(:callee_to_caller, state, opts.listen_port, opts.send_to)
     {[spec: spec, start_timer: {:tally, Membrane.Time.second()}], state}
   end
 
   @impl true
+  def handle_info({:add_leg, listen_port, send_to}, _ctx, state) do
+    Membrane.Logger.info(
+      "[relay] call=#{state.call_id} caller→callee leg: " <>
+        "listen :#{listen_port} -> #{inspect(send_to)}"
+    )
+
+    spec = leg(:caller_to_callee, state, listen_port, send_to)
+    {[spec: spec], state}
+  end
+
+  @impl true
   def handle_tick(:tally, _ctx, state) do
-    a = :counters.get(state.caller_to_callee, 1)
-    b = :counters.get(state.callee_to_caller, 1)
+    a = :counters.get(state.counters.caller_to_callee, 1)
+    b = :counters.get(state.counters.callee_to_caller, 1)
 
     Membrane.Logger.info(
       "[relay] call=#{state.call_id} caller→callee=#{a} pkts, callee→caller=#{b} pkts"
     )
 
     {[], state}
+  end
+
+  # One unidirectional leg: receive RTP on `listen_port`, fan out to a UDP sink
+  # toward `dest` and to a WAV recorder. `dir` names both the recording file and
+  # the packet counter, and keeps the per-leg child names unique.
+  defp leg(dir, state, listen_port, %EkEndpoint{} = dest) do
+    wav = Path.join(state.recordings_dir, "#{state.safe_id}__#{dir}.wav")
+    counter = Map.fetch!(state.counters, dir)
+
+    [
+      child({:src, dir}, %UDP.Source{local_address: state.local_ip, local_port_no: listen_port})
+      |> child({:tee, dir}, Tee.Parallel),
+      get_child({:tee, dir})
+      |> child({:probe, dir}, %Debug.Filter{handle_buffer: tally(counter)})
+      |> child(
+        {:sink, dir},
+        %UDP.Sink{destination_address: dest.ip, destination_port_no: dest.rtp_port}
+      ),
+      get_child({:tee, dir})
+      |> child({:parser, dir}, RTP.Parser)
+      |> child({:depay, dir}, G711Depayloader)
+      |> child({:decoder, dir}, %G711Decoder{encoding: :PCMU})
+      |> child({:wav, dir}, WAV.Serializer)
+      |> child({:writer, dir}, %MFile.Sink{location: wav})
+    ]
   end
 
   defp tally(counter) do

@@ -1,19 +1,26 @@
 # relay_handler
 
 Two-peer RTP relay built on top of `ex_kamailio` and Membrane. The
-`ExKamailio.Handler` callback hooks Kamailio's `rtpengine` commands
-(offer / answer / delete) into a `Membrane.Pipeline` of two
-`Membrane.UDP.Endpoint`s wired crosswise.
+`ExKamailio.Handler` callbacks hook Kamailio's `rtpengine` commands
+(offer / answer / delete) into a `Membrane.Pipeline` that grows one
+unidirectional leg at a time as the SIP dialog progresses.
+
+`ex_kamailio` is a pure SDP shuttle — it allocates no ports and owns no media.
+This example owns all of that: it keeps its own `RelayHandler.PortPool`, picks
+the local ports, and binds the sockets.
 
 ```
-peer A  <-->  [UDP Endpoint]  <-x->  [UDP Endpoint]  <-->  peer B
-              local: callee_local        local: caller_local
-              dst:   caller_remote       dst:   callee_remote
+offer:  callee → UDP.Source(:caller_local) ─tee─▶ UDP.Sink ─▶ caller
+                                                 └▶ callee_to_caller.wav
+answer: caller → UDP.Source(:callee_local) ─tee─▶ UDP.Sink ─▶ callee
+                                                 └▶ caller_to_callee.wav
 ```
 
-(The unintuitive `caller_local`/`callee_local` mapping is the rtpengine
-wire convention — `caller_local` is the port advertised in the rewritten
-INVITE, which is the port the *callee* sends to.)
+On `offer` the handler picks `caller_local` (the port advertised in the
+rewritten INVITE — the port the *callee* sends to) and starts the callee→caller
+leg. On `answer` it picks `callee_local` (the port the *caller* sends to) and
+adds the caller→callee leg to the running pipeline. (That `caller_local` /
+`callee_local` naming is the rtpengine wire convention.)
 
 Each leg's output also fans through a `Membrane.Tee.Parallel` into a
 `RTP.Parser → RTP.G711.Depayloader → G711.FFmpeg.Decoder → WAV.Serializer →

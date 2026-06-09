@@ -23,3 +23,6 @@ examples/*/erl_crash.dump
 
 # Erlang crash dumps
 erl_crash.dump
+
+# Host-run relay recordings
+/examples/relay_handler/recordings/
