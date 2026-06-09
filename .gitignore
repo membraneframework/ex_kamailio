@@ -20,3 +20,6 @@ examples/*/erl_crash.dump
 
 # macOS
 .DS_Store
+
+# Erlang crash dumps
+erl_crash.dump
