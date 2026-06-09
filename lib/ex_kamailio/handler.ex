@@ -98,5 +98,10 @@ defmodule ExKamailio.Handler do
   @callback answer(Session.t(), state()) ::
               {:ok, sdp(), state()} | {:error, reason(), state()}
 
+  @callback handle_info(message :: term(), Session.t(), state()) ::
+              {:ok, state()} | {:error, reason(), state()}
+
   @callback delete(Session.t(), state()) :: {:ok, state()}
+
+  @optional_callbacks handle_info: 3
 end
