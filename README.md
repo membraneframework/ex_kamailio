@@ -48,9 +48,8 @@ config :ex_kamailio,
 
 ex_kamailio is a pure SDP shuttle: it owns no media ports and picks no
 codecs. Your handler binds its own sockets and advertises them in the SDP it
-returns. The advertised IP is the handler's choice too —
-`ExKamailio.Utils.detect_media_ip/0` is a handy default (this host's first
-non-loopback IPv4).
+returns. The advertised IP is the handler's choice too — see how the
+relay_handler example auto-detects this host's first non-loopback IPv4.
 
 ## Writing a handler
 

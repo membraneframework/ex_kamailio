@@ -21,12 +21,12 @@ defmodule RelayHandler do
   use ExKamailio.Handler
 
   require Logger
-  alias ExKamailio.{Endpoint, SDP, Utils}
+  alias ExKamailio.{Endpoint, SDP}
   alias RelayHandler.PortPool
 
   @impl true
   def init(_opts) do
-    media_ip = Utils.resolve_media_ip(Application.get_env(:relay_handler, :media_ip, "auto"))
+    media_ip = resolve_media_ip(Application.get_env(:relay_handler, :media_ip, "auto"))
     {:ok, %{media_ip: media_ip, pipeline: nil, caller_local: nil, callee_local: nil}}
   end
 
@@ -115,4 +115,25 @@ defmodule RelayHandler do
 
   defp stop_pipeline(nil), do: :ok
   defp stop_pipeline(pid), do: Membrane.Pipeline.terminate(pid, asynchronous?: true)
+
+  # "auto" advertises this host's first non-loopback IPv4 in the SDP.
+  defp resolve_media_ip(media_ip) when media_ip in [:auto, "auto"] do
+    {:ok, ifs} = :inet.getifaddrs()
+
+    ip =
+      ifs
+      |> Enum.flat_map(fn {_name, opts} -> Keyword.get_values(opts, :addr) end)
+      |> Enum.find({127, 0, 0, 1}, fn
+        {127, _, _, _} -> false
+        {_, _, _, _} -> true
+        _ -> false
+      end)
+      |> :inet.ntoa()
+      |> to_string()
+
+    Logger.info("media_ip: :auto resolved to #{ip}")
+    ip
+  end
+
+  defp resolve_media_ip(media_ip), do: media_ip
 end
