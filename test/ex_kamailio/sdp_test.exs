@@ -27,17 +27,6 @@ defmodule ExKamailio.SDPTest do
     end
   end
 
-  describe "answer_sdp/5" do
-    test "produces an answer with the given endpoint and direction" do
-      body = SDP.answer_sdp("192.0.2.10", 40_000, 40_001, [0, 101], "sendrecv")
-      assert body =~ "v=0"
-      assert body =~ "m=audio 40000 RTP/AVP 0 101"
-      assert body =~ "c=IN IP4 192.0.2.10"
-      assert body =~ "a=rtcp:40001"
-      assert body =~ "a=sendrecv"
-    end
-  end
-
   describe "rewrite_endpoint/2" do
     test "repoints media at the endpoint while preserving the offered codecs" do
       {:ok, sdp} = SDP.parse(@offer)

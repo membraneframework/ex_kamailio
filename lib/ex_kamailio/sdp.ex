@@ -1,11 +1,10 @@
 defmodule ExKamailio.SDP do
   @moduledoc """
-  SDP parsing and answer-building helpers.
+  SDP parsing and rewriting helpers.
 
   Thin wrapper over `ExSDP`. Handlers typically call `rewrite_endpoint/2`
   to forward a peer's SDP repointed at their allocated media address
-  (preserving the offered codecs); `answer_sdp/5` builds a minimal answer
-  from scratch instead (e.g. to force a single codec like PCMU).
+  (preserving the offered codecs).
   """
 
   alias ExKamailio.Endpoint
@@ -71,31 +70,6 @@ defmodule ExKamailio.SDP do
       {:ok, tuple} -> tuple
       {:error, _} -> {:IP4, ip}
     end
-  end
-
-  @doc """
-  Build a minimal SDP answer string advertising the given local
-  endpoint, payload types, and direction.
-  """
-  @spec answer_sdp(String.t(), pos_integer(), pos_integer(), [integer()], String.t()) ::
-          String.t()
-  def answer_sdp(ip, rtp_port, rtcp_port, pts, dir) do
-    fmt = pts |> Enum.map(&to_string/1) |> Enum.join(" ")
-
-    [
-      "v=0",
-      "o=- 0 0 IN IP4 #{ip}",
-      "s=-",
-      "t=0 0",
-      "a=tool:ex_kamailio",
-      "m=audio #{rtp_port} RTP/AVP #{fmt}",
-      "c=IN IP4 #{ip}",
-      "a=rtcp:#{rtcp_port} IN IP4 #{ip}",
-      "a=#{dir}",
-      "a=rtcp-mux"
-    ]
-    |> Enum.join("\r\n")
-    |> Kernel.<>("\r\n")
   end
 
   @doc """

@@ -21,7 +21,7 @@ defmodule RelayHandler do
   use ExKamailio.Handler
 
   require Logger
-  alias ExKamailio.{Endpoint, SDP}
+  alias ExKamailio.Endpoint
   alias RelayHandler.PortPool
 
   @impl true
@@ -77,9 +77,22 @@ defmodule RelayHandler do
 
   # Force PCMU on both legs so the per-call `.wav` recordings decode cleanly —
   # the handler's choice, ex_kamailio stays codec-agnostic. Swap in
-  # `SDP.rewrite_endpoint(peer_sdp, local)` to forward the negotiated codecs.
+  # `ExKamailio.SDP.rewrite_endpoint(peer_sdp, local)` to forward the codecs.
   defp pcmu_sdp(local) do
-    SDP.answer_sdp(local.ip, local.rtp_port, local.rtcp_port, [0, 101], "sendrecv")
+    [
+      "v=0",
+      "o=- 0 0 IN IP4 #{local.ip}",
+      "s=-",
+      "t=0 0",
+      "a=tool:relay_handler",
+      "m=audio #{local.rtp_port} RTP/AVP 0 101",
+      "c=IN IP4 #{local.ip}",
+      "a=rtcp:#{local.rtcp_port} IN IP4 #{local.ip}",
+      "a=sendrecv",
+      "a=rtcp-mux"
+    ]
+    |> Enum.join("\r\n")
+    |> Kernel.<>("\r\n")
   end
 
   defp checkout(media_ip, key) do

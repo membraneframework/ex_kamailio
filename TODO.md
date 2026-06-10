@@ -60,6 +60,14 @@ BYEs both legs. Mirror that:
 - ex_kamailio: monitor call processes; on abnormal exit POST
   `dlg.terminate_dlg` for that call-id.
 
+## Decide: keep or delete `SDP.rewrite_endpoint/2`
+
+Kept for now. It's the shuttle primitive ("repoint a parsed SDP at a local
+endpoint, preserving its codecs") and the README handler is built on it — but
+no shipped code calls it (the relay example builds its PCMU SDP by hand), and
+it does no offer/answer mediation; correctness depends on the handler passing
+the right SDP in. Decide whether that convenience earns its API surface.
+
 ## Roadmap (from README "Status")
 
 Not yet implemented; out of scope for the current pass:
