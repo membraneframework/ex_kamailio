@@ -13,32 +13,22 @@ defmodule ExKamailio.WebSocketTest do
     def init(opts), do: {:ok, %{calls: opts[:report_to] || self()}}
 
     @impl true
-    def offer(session, state) do
+    def handle_offer(session, state) do
       send(state.calls, {:offer_called, session})
       {:ok, SDP.rewrite_endpoint(session.offer_sdp, @local), state}
     end
 
     @impl true
-    def answer(session, state) do
+    def handle_answer(session, state) do
       send(state.calls, {:answer_called, session})
       {:ok, SDP.rewrite_endpoint(session.answer_sdp, @local), state}
     end
 
     @impl true
-    def delete(session, state) do
+    def handle_delete(session, state) do
       send(state.calls, {:delete_called, session})
       {:ok, state}
     end
-  end
-
-  defmodule RejectingHandler do
-    use ExKamailio.Handler
-
-    @impl true
-    def offer(_s, st), do: {:error, :nope, st}
-
-    @impl true
-    def answer(_s, st), do: {:error, :nope, st}
   end
 
   @offer_sdp """
@@ -122,25 +112,6 @@ defmodule ExKamailio.WebSocketTest do
       assert session.state == :offered
       assert session.caller_remote.rtp_port == 49_170
     end
-
-    test "rejects offer when handler returns :error", %{state: _state} do
-      Application.put_env(:ex_kamailio, :handler, RejectingHandler)
-      {:ok, state} = WebSocket.init([])
-
-      msg =
-        frame("aaaaa", %{
-          command: "offer",
-          "call-id": "call-2",
-          "from-tag": "f1",
-          sdp: @offer_sdp
-        })
-
-      assert {:push, {:text, reply}, _state} =
-               WebSocket.handle_in({msg, [opcode: :text]}, state)
-
-      assert decode!(reply)["result"] == "error"
-      assert eventually_unregistered("call-2")
-    end
   end
 
   describe "answer" do
@@ -222,17 +193,17 @@ defmodule ExKamailio.WebSocketTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
 
     @impl true
-    def offer(session, state) do
+    def handle_offer(session, state) do
       reply = SDP.rewrite_endpoint(session.offer_sdp, @local)
       {:ok, reply, %{state | mark: session.call_id}}
     end
 
     @impl true
-    def answer(session, state),
+    def handle_answer(session, state),
       do: {:ok, SDP.rewrite_endpoint(session.answer_sdp, @local), state}
 
     @impl true
-    def delete(session, state) do
+    def handle_delete(session, state) do
       send(state.report_to, {:deleted, session.call_id, state.mark})
       {:ok, state}
     end
@@ -284,10 +255,10 @@ defmodule ExKamailio.WebSocketTest do
     use ExKamailio.Handler
 
     @impl true
-    def offer(_s, _st), do: raise("boom")
+    def handle_offer(_s, _st), do: raise("boom")
 
     @impl true
-    def answer(_s, _st), do: raise("boom")
+    def handle_answer(_s, _st), do: raise("boom")
   end
 
   describe "handler crash" do

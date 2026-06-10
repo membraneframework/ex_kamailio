@@ -10,10 +10,6 @@ defmodule ExKamailio.WebSocket do
   `ExKamailio.CallRegistry`). The call process runs the user's `Handler`
   callbacks and holds that call's state; this process only ships SDP in and out.
 
-  The library is a pure SDP shuttle: it does not allocate media ports or pick
-  codecs. The handler owns its media endpoints and advertises them in the SDP it
-  returns.
-
   This module is the only ex_kamailio code that talks the rtpengine protocol
   directly. Everything user-facing flows through `ExKamailio.Handler`.
   """
@@ -108,8 +104,8 @@ defmodule ExKamailio.WebSocket do
       {:push, encode_reply(cookie, %{result: "ok", sdp: wire_sdp}), state}
     else
       {:error, reason} ->
-        Logger.error("handler offer rejected: #{inspect(reason)}")
-        {:push, reply_error(cookie, "handler rejected offer"), state}
+        Logger.error("handler offer failed: #{inspect(reason)}")
+        {:push, reply_error(cookie, "handler offer failed"), state}
     end
   end
 
@@ -145,8 +141,8 @@ defmodule ExKamailio.WebSocket do
         {:push, reply_error(cookie, "unknown call"), state}
 
       {:error, reason} ->
-        Logger.error("handler answer rejected: #{inspect(reason)}")
-        {:push, reply_error(cookie, "handler rejected answer"), state}
+        Logger.error("handler answer failed: #{inspect(reason)}")
+        {:push, reply_error(cookie, "handler answer failed"), state}
     end
   end
 

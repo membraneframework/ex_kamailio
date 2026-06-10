@@ -7,12 +7,12 @@ defmodule RelayHandler do
   codecs. This handler is what binds sockets, picks ports and runs the media —
   and it builds the relay one leg at a time, in step with the dialog:
 
-    * `offer/2`  — pick the local port the *callee* will send to, start the
-      pipeline with the callee→caller leg (bound to that port, forwarding to
-      the caller), and advertise it in the reply SDP.
-    * `answer/2` — pick the local port the *caller* will send to, add the
-      caller→callee leg to the running pipeline, and advertise it.
-    * `delete/2` — terminate the pipeline.
+    * `handle_offer/2`  — pick the local port the *callee* will send to, start
+      the pipeline with the callee→caller leg (bound to that port, forwarding
+      to the caller), and advertise it in the reply SDP.
+    * `handle_answer/2` — pick the local port the *caller* will send to, add
+      the caller→callee leg to the running pipeline, and advertise it.
+    * `handle_delete/2` — terminate the pipeline.
 
   ex_kamailio keeps a separate handler state per `call_id`, so the pipeline pid
   lives directly in this call's state.
@@ -31,11 +31,9 @@ defmodule RelayHandler do
   end
 
   @impl true
-  def offer(session, state) do
-    # The port we advertise here goes into the rewritten INVITE — it's the port
-    # the *callee* will send to. Stand up the callee→caller leg now: it listens
-    # on that port and forwards to the caller (known from the offer SDP). No
-    # media flows until the callee answers, but the socket is bound from now on.
+  def handle_offer(session, state) do
+    # This port goes into the rewritten INVITE — the port the *callee* sends to.
+    # Start the callee→caller leg now; media flows once the callee answers.
     local = checkout(state.media_ip, {session.call_id, :caller})
 
     Logger.info(
@@ -48,14 +46,13 @@ defmodule RelayHandler do
         {:ok, pcmu_sdp(local), %{state | pipeline: pid, caller_local: local}}
 
       {:error, reason} ->
-        Logger.error("[relay] pipeline start failed for #{session.call_id}: #{inspect(reason)}")
         PortPool.release({session.call_id, :caller}, local.rtp_port)
-        {:error, reason, state}
+        raise "pipeline start failed for #{session.call_id}: #{inspect(reason)}"
     end
   end
 
   @impl true
-  def answer(session, state) do
+  def handle_answer(session, state) do
     # This port goes back to the caller in 200 OK — the port the *caller* sends
     # to. Add the caller→callee leg: listen on it, forward to the callee.
     local = checkout(state.media_ip, {session.call_id, :callee})
@@ -70,7 +67,7 @@ defmodule RelayHandler do
   end
 
   @impl true
-  def delete(session, state) do
+  def handle_delete(session, state) do
     Logger.info("[relay] delete call=#{session.call_id}")
     stop_pipeline(state.pipeline)
     release(state.caller_local, {session.call_id, :caller})
@@ -78,17 +75,13 @@ defmodule RelayHandler do
     {:ok, state}
   end
 
-  # Force PCMU (G.711 μ-law) on both legs instead of forwarding the peers'
-  # codecs, so the per-call `.wav` recordings decode cleanly. ex_kamailio stays
-  # codec-agnostic — this is the handler's choice. Swap in
-  # `SDP.rewrite_endpoint(peer_sdp, local)` to forward the negotiated codecs
-  # (Opus, etc.) instead.
+  # Force PCMU on both legs so the per-call `.wav` recordings decode cleanly —
+  # the handler's choice, ex_kamailio stays codec-agnostic. Swap in
+  # `SDP.rewrite_endpoint(peer_sdp, local)` to forward the negotiated codecs.
   defp pcmu_sdp(local) do
     SDP.answer_sdp(local.ip, local.rtp_port, local.rtcp_port, [0, 101], "sendrecv")
   end
 
-  # The handler owns its media ports. ex_kamailio no longer allocates them, so
-  # the example keeps its own pool (`RelayHandler.PortPool`).
   defp checkout(media_ip, key) do
     {:ok, {rtp, _}} = PortPool.checkout(key)
     %Endpoint{ip: media_ip, rtp_port: rtp, rtcp_port: rtp + 1}

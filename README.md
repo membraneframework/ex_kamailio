@@ -63,7 +63,7 @@ defmodule MyApp.KamailioHandler do
   def init(_opts), do: {:ok, %{pipeline: nil}}
 
   @impl true
-  def offer(session, state) do
+  def handle_offer(session, state) do
     # session.caller_remote — what the caller advertised in SDP (parsed for you)
     # session.offer_sdp     — full %ExSDP{} struct
 
@@ -80,14 +80,14 @@ defmodule MyApp.KamailioHandler do
   end
 
   @impl true
-  def answer(session, state) do
+  def handle_answer(session, state) do
     {:ok, local} = MyApp.Media.add_callee(state.pipeline, session.callee_remote)
     answer = SDP.rewrite_endpoint(session.answer_sdp, local)
     {:ok, answer, state}
   end
 
   @impl true
-  def delete(_session, state) do
+  def handle_delete(_session, state) do
     MyApp.Media.stop(state.pipeline)
     {:ok, state}
   end
@@ -100,7 +100,7 @@ sockets / allocates its own ports and decides what to do with the stream.
 
 `state` is kept **per call** (keyed by `session.call_id`): `init/1` seeds each
 new call, your callbacks receive and return that call's state, and it is dropped
-on `delete/2` — so keeping a pipeline pid in a bare field, as above, is safe even
+on `handle_delete/2` — so keeping a pipeline pid in a bare field, as above, is safe even
 with many overlapping calls.
 
 Callbacks return an `%ExSDP{}` struct (build it with
@@ -111,16 +111,16 @@ Callbacks return an `%ExSDP{}` struct (build it with
 1. Caller (A) sends `INVITE` + SDP to Kamailio.
 2. Kamailio forwards the SDP to `ex_kamailio` over the rtpengine
    WebSocket as an `offer` command.
-3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.Handler.offer/2`.
+3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.Handler.handle_offer/2`.
    Your handler binds its media socket and returns an answer SDP
    advertising it.
 4. `ex_kamailio` sends that SDP back to Kamailio, which puts it into the
    `INVITE` forwarded to callee (B).
 5. Callee replies `200 OK` + SDP. Kamailio forwards as an `answer`
-   command and `ex_kamailio` calls `c:ExKamailio.Handler.answer/2`.
+   command and `ex_kamailio` calls `c:ExKamailio.Handler.handle_answer/2`.
 6. Your handler returns an SDP for caller; `ex_kamailio` ships it back.
 7. On call teardown, Kamailio sends `delete`, ex_kamailio calls
-   `c:ExKamailio.Handler.delete/2`, and your handler releases whatever it
+   `c:ExKamailio.Handler.handle_delete/2`, and your handler releases whatever it
    allocated.
 
 ## NAT and dynamic IPs

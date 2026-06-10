@@ -12,19 +12,19 @@ defmodule ExKamailio.Handler.ServerTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
-    def offer(session, st) do
+    def handle_offer(session, st) do
       send(st.report_to, {:offer, session.call_id})
       {:ok, "offer-sdp", st}
     end
 
     @impl true
-    def answer(session, st) do
+    def handle_answer(session, st) do
       send(st.report_to, {:answer, session.call_id, session.to_tag})
       {:ok, "answer-sdp", st}
     end
 
     @impl true
-    def delete(session, st) do
+    def handle_delete(session, st) do
       send(st.report_to, {:delete, session.call_id})
       {:ok, st}
     end
@@ -40,10 +40,10 @@ defmodule ExKamailio.Handler.ServerTest do
     use ExKamailio.Handler
 
     @impl true
-    def offer(_session, st), do: {:ok, "offer-sdp", st}
+    def handle_offer(_session, st), do: {:ok, "offer-sdp", st}
 
     @impl true
-    def answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
   end
 
   defmodule ExtendHandler do
@@ -53,10 +53,10 @@ defmodule ExKamailio.Handler.ServerTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
-    def offer(_session, st), do: {:ok, "offer-sdp", st}
+    def handle_offer(_session, st), do: {:ok, "offer-sdp", st}
 
     @impl true
-    def answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
 
     @impl true
     def handle_timeout(session, st) do
@@ -69,10 +69,10 @@ defmodule ExKamailio.Handler.ServerTest do
     use ExKamailio.Handler
 
     @impl true
-    def offer(_session, _st), do: raise("boom")
+    def handle_offer(_session, _st), do: raise("boom")
 
     @impl true
-    def answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
   end
 
   setup do

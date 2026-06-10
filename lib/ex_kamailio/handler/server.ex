@@ -7,11 +7,6 @@ defmodule ExKamailio.Handler.Server do
   `ExKamailio.CallRegistry`, so an `offer`/`answer`/`delete` arriving on any
   pooled WebSocket connection routes to the same process. The registry entry is
   dropped automatically when the process stops.
-
-  `ExKamailio.WebSocket` talks to this module only through `start_call/3` and
-  `call_offer/2` / `call_answer/2` / `call_delete/1`, which turn a dead call
-  process into `{:error, ...}` instead of propagating the exit into the
-  transport.
   """
 
   use GenServer
@@ -37,13 +32,12 @@ defmodule ExKamailio.Handler.Server do
     end
   end
 
-  # The catch clauses turn a dead/absent call process into {:error, ...} rather
-  # than an exit in the caller (the shared WebSocket process), so one bad call
-  # can't take the transport down with it.
+  # The catch clauses turn a dead/absent call process into {:error, ...}, so one
+  # bad call can't take the shared WebSocket caller down with it.
 
   @spec call_offer(String.t(), ExKamailio.Session.t()) :: {:ok, binary()} | {:error, term()}
   def call_offer(call_id, session) do
-    GenServer.call(via(call_id), {:offer, session})
+    GenServer.call(via(call_id), {__MODULE__, :offer, session})
   catch
     :exit, {:noproc, _} -> {:error, :unknown}
     :exit, reason -> {:error, {:down, reason}}
@@ -51,7 +45,7 @@ defmodule ExKamailio.Handler.Server do
 
   @spec call_answer(String.t(), map()) :: {:ok, binary()} | {:error, term()}
   def call_answer(call_id, answer_fields) do
-    GenServer.call(via(call_id), {:answer, answer_fields})
+    GenServer.call(via(call_id), {__MODULE__, :answer, answer_fields})
   catch
     :exit, {:noproc, _} -> {:error, :unknown}
     :exit, reason -> {:error, {:down, reason}}
@@ -59,7 +53,7 @@ defmodule ExKamailio.Handler.Server do
 
   @spec call_delete(String.t()) :: :ok | {:error, term()}
   def call_delete(call_id) do
-    GenServer.call(via(call_id), :delete)
+    GenServer.call(via(call_id), {__MODULE__, :delete})
   catch
     :exit, {:noproc, _} -> {:error, :unknown}
     :exit, reason -> {:error, {:down, reason}}
@@ -90,22 +84,16 @@ defmodule ExKamailio.Handler.Server do
   end
 
   @impl true
-  def handle_call({:offer, session}, _from, state) do
-    case state.impl.offer(session, state.inner_state) do
-      {:ok, sdp, inner_state} ->
-        state = arm_timer(%{state | session: session, inner_state: inner_state})
-        {:reply, {:ok, wire(sdp)}, state}
-
-      {:error, reason, inner_state} ->
-        {:stop, :normal, {:error, reason}, %{state | inner_state: inner_state}}
-    end
+  def handle_call({__MODULE__, :offer, session}, _from, state) do
+    {:ok, sdp, inner_state} = state.impl.handle_offer(session, state.inner_state)
+    state = arm_timer(%{state | session: session, inner_state: inner_state})
+    {:reply, {:ok, wire(sdp)}, state}
   end
 
-  # Kamailio retransmits 200 OK; rtpengine_answer fires again. Replay the cached
-  # reply instead of re-invoking the handler (which would spawn a second
-  # pipeline / re-bind ports).
+  # Kamailio retransmits 200 OK; replay the cached reply instead of re-invoking
+  # the handler (which would spawn a second pipeline / re-bind ports).
   def handle_call(
-        {:answer, %{to_tag: to_tag}},
+        {__MODULE__, :answer, %{to_tag: to_tag}},
         _from,
         %{session: %{state: :answered, to_tag: to_tag, answer_reply_sdp: reply_sdp}} = state
       )
@@ -113,7 +101,7 @@ defmodule ExKamailio.Handler.Server do
     {:reply, {:ok, reply_sdp}, state}
   end
 
-  def handle_call({:answer, fields}, _from, %{session: %{state: :offered}} = state) do
+  def handle_call({__MODULE__, :answer, fields}, _from, %{session: %{state: :offered}} = state) do
     session = %{
       state.session
       | state: :answered,
@@ -122,37 +110,28 @@ defmodule ExKamailio.Handler.Server do
         answer_sdp: fields.answer_sdp
     }
 
-    case state.impl.answer(session, state.inner_state) do
-      {:ok, sdp, inner_state} ->
-        wire_sdp = wire(sdp)
-        session = %{session | answer_reply_sdp: wire_sdp}
-
-        {:reply, {:ok, wire_sdp},
-         arm_timer(%{state | session: session, inner_state: inner_state})}
-
-      {:error, reason, inner_state} ->
-        # Don't commit the :answered transition — the call stays :offered so a
-        # retried answer (or a delete) still works.
-        {:reply, {:error, reason}, %{state | inner_state: inner_state}}
-    end
+    {:ok, sdp, inner_state} = state.impl.handle_answer(session, state.inner_state)
+    wire_sdp = wire(sdp)
+    session = %{session | answer_reply_sdp: wire_sdp}
+    {:reply, {:ok, wire_sdp}, arm_timer(%{state | session: session, inner_state: inner_state})}
   end
 
-  def handle_call({:answer, _fields}, _from, state) do
+  def handle_call({__MODULE__, :answer, _fields}, _from, state) do
     {:reply, {:error, :late}, state}
   end
 
-  def handle_call(:delete, _from, state) do
-    safe_delete(state)
+  def handle_call({__MODULE__, :delete}, _from, state) do
+    run_delete(state)
     {:stop, :normal, :ok, state}
   end
 
   @impl true
-  def handle_info(:call_timeout, state) do
+  def handle_info({__MODULE__, :call_timeout}, state) do
     case state.impl.handle_timeout(state.session, state.inner_state) do
       {:stop, inner_state} ->
         state = %{state | inner_state: inner_state}
         Logger.warning("call #{state.call_id} idle-timed out; tearing down")
-        safe_delete(state)
+        run_delete(state)
         {:stop, :normal, state}
 
       {:noreply, inner_state} ->
@@ -161,30 +140,22 @@ defmodule ExKamailio.Handler.Server do
   end
 
   def handle_info(message, state) do
-    case state.impl.handle_info(message, state.session, state.inner_state) do
-      {:ok, inner_state} -> {:noreply, %{state | inner_state: inner_state}}
-      {:error, reason, inner_state} -> {:stop, reason, %{state | inner_state: inner_state}}
-    end
+    {:ok, inner_state} = state.impl.handle_info(message, state.session, state.inner_state)
+    {:noreply, %{state | inner_state: inner_state}}
   end
 
   # -- internals --
 
-  # Best-effort teardown: a crashing delete still lets us reply and stop, so a
-  # buggy handler can't wedge the call process.
-  defp safe_delete(%{session: nil}), do: :ok
+  defp run_delete(%{session: nil}), do: :ok
 
-  defp safe_delete(state) do
-    state.impl.delete(state.session, state.inner_state)
+  defp run_delete(state) do
+    {:ok, _inner_state} = state.impl.handle_delete(state.session, state.inner_state)
     :ok
-  rescue
-    e -> Logger.error("handler delete crashed: #{Exception.message(e)}")
-  catch
-    kind, reason -> Logger.error("handler delete #{inspect(kind)}: #{inspect(reason)}")
   end
 
   defp arm_timer(state) do
     if state.timer_ref, do: Process.cancel_timer(state.timer_ref)
-    %{state | timer_ref: Process.send_after(self(), :call_timeout, state.timeout)}
+    %{state | timer_ref: Process.send_after(self(), {__MODULE__, :call_timeout}, state.timeout)}
   end
 
   defp wire(sdp) when is_binary(sdp), do: sdp

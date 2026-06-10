@@ -15,16 +15,16 @@ defmodule ExKamailio.Handler do
         use ExKamailio.Handler
 
         @impl true
-        def offer(session, state), do: {:ok, reply_sdp, state}
+        def handle_offer(session, state), do: {:ok, reply_sdp, state}
 
         @impl true
-        def answer(session, state), do: {:ok, reply_sdp, state}
+        def handle_answer(session, state), do: {:ok, reply_sdp, state}
       end
 
   `use ExKamailio.Handler` declares the behaviour and provides overridable
-  defaults for `c:init/1` (`{:ok, %{}}`), `c:delete/2` (no-op) and
+  defaults for `c:init/1` (`{:ok, %{}}`), `c:handle_delete/2` (no-op) and
   `c:handle_timeout/2` (tear the call down), so a handler only has to define
-  `c:offer/2` and `c:answer/2`. Using `@behaviour ExKamailio.Handler` directly
+  `c:handle_offer/2` and `c:handle_answer/2`. Using `@behaviour ExKamailio.Handler` directly
   works too — then you must define all non-optional callbacks.
 
   Register your handler module in config:
@@ -37,7 +37,7 @@ defmodule ExKamailio.Handler do
   looked up by `session.call_id` through `ExKamailio.CallRegistry`. `c:init/1`
   seeds the state for each new call, that process holds it in its own memory,
   your callbacks receive and return it, and it is discarded when the process
-  stops on `c:delete/2`. You can safely keep per-call data (a pipeline pid, say)
+  stops on `c:handle_delete/2`. You can safely keep per-call data (a pipeline pid, say)
   in a bare field — each call has its own process, so overlapping calls never
   share or overwrite each other's state.
 
@@ -59,48 +59,48 @@ defmodule ExKamailio.Handler do
   would otherwise live forever. Each call arms an idle timer — `:call_timeout`
   in config, default 30 minutes, reset on `offer`/`answer`. On expiry the
   library calls `c:handle_timeout/2`; the `use` default tears the call down
-  (runs `c:delete/2`, then stops). Override it to extend the call
+  (runs `c:handle_delete/2`, then stops). Override it to extend the call
   (`{:noreply, state}`) or to clean up differently before stopping.
 
   ## Lifecycle (per call)
 
   1. `c:init/1` seeds the state for the call.
-  2. `c:offer/2` is called when Kamailio relays an SDP offer from the
+  2. `c:handle_offer/2` is called when Kamailio relays an SDP offer from the
      caller (`session.offer_sdp`; the caller's media address is parsed
      into `session.caller_remote` for convenience). Bind your own media
      socket and return the SDP — advertising your address — to send back
      to Kamailio (which forwards it to the callee in an `INVITE`).
-  3. `c:answer/2` is called when Kamailio relays the SDP answer from the
+  3. `c:handle_answer/2` is called when Kamailio relays the SDP answer from the
      callee (`session.answer_sdp` / `session.callee_remote`). Return the
      SDP that will be forwarded back to the caller in `200 OK`.
-  4. `c:delete/2` is called when Kamailio tears down the call; its state
+  4. `c:handle_delete/2` is called when Kamailio tears down the call; its state
      is then dropped. Release whatever media resources you allocated here.
 
-  All callbacks may return `{:error, reason, state}`, which causes
-  ex_kamailio to reply to Kamailio with a Bencode error and skip any
-  further pipeline setup for that command.
+  Callbacks have no error return — to reject a command, raise. The crash
+  is contained to that call's process: ex_kamailio replies to Kamailio
+  with a Bencode error and the call is gone.
   """
 
   alias ExKamailio.Session
 
   @doc """
   Declares the behaviour and injects overridable defaults for `init/1`,
-  `delete/2` and `handle_timeout/2`. See the module doc.
+  `handle_delete/2` and `handle_timeout/2`. See the module doc.
   """
   defmacro __using__(_opts) do
     quote do
-      @behaviour ExKamailio.Handler
+      @behaviour unquote(__MODULE__)
 
       @impl true
       def init(_opts), do: {:ok, %{}}
 
       @impl true
-      def delete(_session, state), do: {:ok, state}
+      def handle_delete(_session, state), do: {:ok, state}
 
       @impl true
       def handle_timeout(_session, state), do: {:stop, state}
 
-      defoverridable init: 1, delete: 2, handle_timeout: 2
+      defoverridable init: 1, handle_delete: 2, handle_timeout: 2
     end
   end
 
@@ -112,23 +112,19 @@ defmodule ExKamailio.Handler do
   a raw string is also accepted for log-only or hand-rolled handlers.
   """
   @type sdp :: ExSDP.t() | String.t()
-  @type reason :: term()
 
   @callback init(opts :: keyword()) :: {:ok, state()}
 
-  @callback offer(Session.t(), state()) ::
-              {:ok, sdp(), state()} | {:error, reason(), state()}
+  @callback handle_offer(Session.t(), state()) :: {:ok, sdp(), state()}
 
-  @callback answer(Session.t(), state()) ::
-              {:ok, sdp(), state()} | {:error, reason(), state()}
+  @callback handle_answer(Session.t(), state()) :: {:ok, sdp(), state()}
 
-  @callback handle_info(message :: term(), Session.t(), state()) ::
-              {:ok, state()} | {:error, reason(), state()}
+  @callback handle_info(message :: term(), Session.t(), state()) :: {:ok, state()}
 
   @callback handle_timeout(Session.t(), state()) ::
               {:stop, state()} | {:noreply, state()}
 
-  @callback delete(Session.t(), state()) :: {:ok, state()}
+  @callback handle_delete(Session.t(), state()) :: {:ok, state()}
 
   @optional_callbacks handle_info: 3
 end
