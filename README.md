@@ -64,15 +64,15 @@ defmodule MyApp.KamailioHandler do
 
   @impl true
   def handle_offer(session, state) do
-    # session.caller_remote — what the caller advertised in SDP (parsed for you)
+    # session.offerer_remote — what the offerer advertised in SDP (parsed for you)
     # session.offer_sdp     — full %ExSDP{} struct
 
     # You own the media: bind your own socket / start a pipeline leg, then
     # advertise the endpoint you bound. `local` is an `%ExKamailio.Endpoint{}`
     # (ip + rtp_port) you choose.
-    {:ok, local, pid} = MyApp.Media.open(session.call_id, session.caller_remote)
+    {:ok, local, pid} = MyApp.Media.open(session.call_id, session.offerer_remote)
 
-    # Forward the caller's SDP, repointed at your local endpoint. The peer's
+    # Forward the offerer's SDP, repointed at your local endpoint. The peer's
     # codecs are preserved — ex_kamailio doesn't pick codecs for you.
     answer = SDP.rewrite_endpoint(session.offer_sdp, local)
 
@@ -81,7 +81,7 @@ defmodule MyApp.KamailioHandler do
 
   @impl true
   def handle_answer(session, state) do
-    {:ok, local} = MyApp.Media.add_callee(state.pipeline, session.callee_remote)
+    {:ok, local} = MyApp.Media.add_answerer(state.pipeline, session.answerer_remote)
     answer = SDP.rewrite_endpoint(session.answer_sdp, local)
     {:ok, answer, state}
   end
@@ -108,17 +108,21 @@ Callbacks return an `%ExSDP{}` struct (build it with
 
 ## Call flow
 
-1. Caller (A) sends `INVITE` + SDP to Kamailio.
+The peers are named by their RFC 3264 roles — **offerer** proposes SDP,
+**answerer** responds. In the initial `INVITE` (all ex_kamailio implements
+so far) the offerer is the caller.
+
+1. The offerer (A) sends `INVITE` + SDP to Kamailio.
 2. Kamailio forwards the SDP to `ex_kamailio` over the rtpengine
    WebSocket as an `offer` command.
 3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.Handler.handle_offer/2`.
-   Your handler binds its media socket and returns an answer SDP
-   advertising it.
+   Your handler binds its media socket and returns an SDP advertising it.
 4. `ex_kamailio` sends that SDP back to Kamailio, which puts it into the
-   `INVITE` forwarded to callee (B).
-5. Callee replies `200 OK` + SDP. Kamailio forwards as an `answer`
+   `INVITE` forwarded to the answerer (B) — it is the offer B sees.
+5. B replies `200 OK` + SDP. Kamailio forwards it as an `answer`
    command and `ex_kamailio` calls `c:ExKamailio.Handler.handle_answer/2`.
-6. Your handler returns an SDP for caller; `ex_kamailio` ships it back.
+6. Your handler returns the SDP that goes back to A as the answer in
+   the forwarded `200 OK`.
 7. On call teardown, Kamailio sends `delete`, ex_kamailio calls
    `c:ExKamailio.Handler.handle_delete/2`, and your handler releases whatever it
    allocated.

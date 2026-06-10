@@ -6,14 +6,14 @@ defmodule RelayHandler.Pipeline do
   This pipeline (and the ports it binds) is entirely the handler's
   responsibility, and it grows with the call:
 
-    * On `offer`, `RelayHandler` starts this pipeline with the **callee→caller**
+    * On `offer`, `RelayHandler` starts this pipeline with the **answerer→offerer**
       leg: a `Membrane.UDP.Source` bound to the local port advertised to the
-      callee, forwarding to the caller's SDP address. No media flows yet — the
-      callee hasn't answered — but the socket is bound, so the advertised port
-      is real.
+      answerer, forwarding to the offerer's SDP address. No media flows yet —
+      the peer hasn't answered — but the socket is bound, so the advertised
+      port is real.
     * On `answer`, the handler sends `{:add_leg, port, dest}` and the
-      **caller→callee** leg is added: a source bound to the port advertised to
-      the caller, forwarding to the callee's SDP address.
+      **offerer→answerer** leg is added: a source bound to the port advertised
+      to the offerer, forwarding to the answerer's SDP address.
 
   Each leg fans its inbound RTP out through a `Tee.Parallel`: one branch
   forwards to the far party (`UDP.Sink`); the other decodes the μ-law payload
@@ -25,7 +25,7 @@ defmodule RelayHandler.Pipeline do
   (the pure-Elixir `membrane_g711_plugin` only does A-law) and serializes a WAV
   header, so the files play directly:
 
-      ffplay <call_id>__caller_to_callee.wav
+      ffplay <call_id>__offerer_to_answerer.wav
 
   Limitations:
     * RTP only — RTCP is not relayed.
@@ -62,38 +62,38 @@ defmodule RelayHandler.Pipeline do
       safe_id: safe_id,
       recordings_dir: recordings_dir,
       counters: %{
-        caller_to_callee: :counters.new(1, []),
-        callee_to_caller: :counters.new(1, [])
+        offerer_to_answerer: :counters.new(1, []),
+        answerer_to_offerer: :counters.new(1, [])
       }
     }
 
     Membrane.Logger.info(
-      "[relay] start call=#{opts.call_id} callee→caller leg: " <>
+      "[relay] start call=#{opts.call_id} answerer→offerer leg: " <>
         "listen :#{opts.listen_port} -> #{inspect(opts.send_to)}"
     )
 
-    spec = leg(:callee_to_caller, state, opts.listen_port, opts.send_to)
+    spec = leg(:answerer_to_offerer, state, opts.listen_port, opts.send_to)
     {[spec: spec, start_timer: {:tally, Membrane.Time.second()}], state}
   end
 
   @impl true
   def handle_info({:add_leg, listen_port, send_to}, _ctx, state) do
     Membrane.Logger.info(
-      "[relay] call=#{state.call_id} caller→callee leg: " <>
+      "[relay] call=#{state.call_id} offerer→answerer leg: " <>
         "listen :#{listen_port} -> #{inspect(send_to)}"
     )
 
-    spec = leg(:caller_to_callee, state, listen_port, send_to)
+    spec = leg(:offerer_to_answerer, state, listen_port, send_to)
     {[spec: spec], state}
   end
 
   @impl true
   def handle_tick(:tally, _ctx, state) do
-    a = :counters.get(state.counters.caller_to_callee, 1)
-    b = :counters.get(state.counters.callee_to_caller, 1)
+    a = :counters.get(state.counters.offerer_to_answerer, 1)
+    b = :counters.get(state.counters.answerer_to_offerer, 1)
 
     Membrane.Logger.info(
-      "[relay] call=#{state.call_id} caller→callee=#{a} pkts, callee→caller=#{b} pkts"
+      "[relay] call=#{state.call_id} offerer→answerer=#{a} pkts, answerer→offerer=#{b} pkts"
     )
 
     {[], state}

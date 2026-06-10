@@ -10,29 +10,29 @@ This example owns all of that: it keeps its own `RelayHandler.PortPool`, picks
 the local ports, and binds the sockets.
 
 ```
-offer:  callee → UDP.Source(:caller_local) ─tee─▶ UDP.Sink ─▶ caller
-                                                 └▶ callee_to_caller.wav
-answer: caller → UDP.Source(:callee_local) ─tee─▶ UDP.Sink ─▶ callee
-                                                 └▶ caller_to_callee.wav
+offer:  answerer → UDP.Source(:offerer_local) ─tee─▶ UDP.Sink ─▶ offerer
+                                                   └▶ answerer_to_offerer.wav
+answer: offerer → UDP.Source(:answerer_local) ─tee─▶ UDP.Sink ─▶ answerer
+                                                   └▶ offerer_to_answerer.wav
 ```
 
-On `offer` the handler picks `caller_local` (the port advertised in the
-rewritten INVITE — the port the *callee* sends to) and starts the callee→caller
-leg. On `answer` it picks `callee_local` (the port the *caller* sends to) and
-adds the caller→callee leg to the running pipeline. (That `caller_local` /
-`callee_local` naming is the rtpengine wire convention.)
+On `offer` the handler picks `offerer_local` (the port advertised in the
+rewritten INVITE — the port the *answerer* sends to) and starts the
+answerer→offerer leg. On `answer` it picks `answerer_local` (the port the
+*offerer* sends to) and adds the offerer→answerer leg to the running pipeline.
+(`<role>_local` names the leg by the SDP exchange that allocated it.)
 
 Each leg's output also fans through a `Membrane.Tee.Parallel` into a
 `RTP.Parser → RTP.G711.Depayloader → G711.FFmpeg.Decoder → WAV.Serializer →
 File.Sink` branch, so every bridged call drops two per-direction recordings
-into `docker/recordings/` — `<call_id>__caller_to_callee.wav` and
-`<call_id>__callee_to_caller.wav`. That's the on-disk proof that the audio
+into `docker/recordings/` — `<call_id>__offerer_to_answerer.wav` and
+`<call_id>__answerer_to_offerer.wav`. That's the on-disk proof that the audio
 actually transited the Membrane pipeline. `RelayHandler` forces **PCMU**
 (G.711 μ-law, 8 kHz, mono) in the SDP it returns; the record branch decodes
 it to PCM and writes a standard WAV header, so the files play directly:
 
 ```sh
-ffplay docker/recordings/<call_id>__caller_to_callee.wav   # or any player
+ffplay docker/recordings/<call_id>__offerer_to_answerer.wav   # or any player
 ```
 
 ## Run end-to-end

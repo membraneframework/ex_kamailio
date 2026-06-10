@@ -90,16 +90,16 @@ docker compose logs relay
 ### Expected `relay` log lines
 
 ```
-[relay] offer  call=…  caller remote=… local=…
-[relay] answer call=…  callee remote=… local=…
+[relay] offer  call=…  offerer remote=… local=…
+[relay] answer call=…  answerer remote=… local=…
 Pipeline<…> [relay] start call=…
-Pipeline<…> [relay] recording call=… to /recordings/…__caller_to_callee.wav / …
-Pipeline<…> [relay] call=… caller→callee=499 pkts, callee→caller=0 pkts
+Pipeline<…> [relay] recording call=… to /recordings/…__offerer_to_answerer.wav / …
+Pipeline<…> [relay] call=… offerer→answerer=499 pkts, answerer→offerer=0 pkts
 [relay] delete call=…
 ```
 
-`caller→callee` counts the SIPp UAC's `play_pcap_audio` traffic
-transiting the Membrane pipeline. `callee→caller` is 0 because the
+`offerer→answerer` counts the SIPp UAC's `play_pcap_audio` traffic
+transiting the Membrane pipeline. `answerer→offerer` is 0 because the
 bundled UAS scenario only listens — it doesn't send media.
 
 ### Recordings
@@ -113,7 +113,7 @@ ffplay -f alaw -ar 8000 -ch_layout mono recordings/uas.alaw
 
 # The relay's Tee branch records each direction transiting the Membrane
 # pipeline, decoded to PCM and written as WAV — plays directly.
-ffplay recordings/<call_id>__caller_to_callee.wav
+ffplay recordings/<call_id>__offerer_to_answerer.wav
 ```
 
 (`-ch_layout mono` on the `uas.alaw` line is for ffmpeg 8.x; older ffmpeg
@@ -274,8 +274,8 @@ to disk. After a call, list the recordings and play them back:
 
 ```sh
 ls -la recordings/                 # *.wav files appear, one per direction
-ffplay recordings/<call_id>__caller_to_callee.wav
-ffplay recordings/<call_id>__callee_to_caller.wav
+ffplay recordings/<call_id>__offerer_to_answerer.wav
+ffplay recordings/<call_id>__answerer_to_offerer.wav
 ```
 
 If those files exist and play back your actual voice from the call,

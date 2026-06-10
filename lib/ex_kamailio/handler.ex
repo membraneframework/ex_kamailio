@@ -62,23 +62,55 @@ defmodule ExKamailio.Handler do
   (runs `c:handle_delete/2`, then stops). Override it to extend the call
   (`{:noreply, state}`) or to clean up differently before stopping.
 
-  ## Lifecycle (per call)
+  ## Call flow
+
+  Kamailio relays each SDP exchange of a call as an rtpengine command, in a
+  fixed order: `offer`, then `answer` (either may be retransmitted), then
+  `delete`. An `answer` for a call that was never offered is rejected without
+  reaching your handler, so `c:handle_offer/2` always runs before
+  `c:handle_answer/2`.
+
+  The peers are named by their RFC 3264 roles: the **offerer** proposes SDP,
+  the **answerer** responds. In the initial `INVITE` — the only exchange
+  ex_kamailio implements so far — the offerer is the caller and the answerer
+  is the callee; in a re-INVITE (rtpengine `update`, on the roadmap) either
+  peer may offer.
 
   1. `c:init/1` seeds the state for the call.
-  2. `c:handle_offer/2` is called when Kamailio relays an SDP offer from the
-     caller (`session.offer_sdp`; the caller's media address is parsed
-     into `session.caller_remote` for convenience). Bind your own media
-     socket and return the SDP — advertising your address — to send back
-     to Kamailio (which forwards it to the callee in an `INVITE`).
-  3. `c:handle_answer/2` is called when Kamailio relays the SDP answer from the
-     callee (`session.answer_sdp` / `session.callee_remote`). Return the
-     SDP that will be forwarded back to the caller in `200 OK`.
-  4. `c:handle_delete/2` is called when Kamailio tears down the call; its state
-     is then dropped. Release whatever media resources you allocated here.
+  2. `c:handle_offer/2` — the offerer's `INVITE` arrived; its SDP offer is in
+     `session.offer_sdp` (media address parsed into `session.offerer_remote`).
+     Bind a media socket and return SDP advertising it: that SDP becomes the
+     *offer* the **answerer** sees in the forwarded `INVITE`. Nothing is sent
+     to the offerer at this stage.
+  3. `c:handle_answer/2` — the answerer accepted; its SDP answer is in
+     `session.answer_sdp` (`session.answerer_remote`). Return SDP advertising
+     your socket for the other direction: that SDP becomes the *answer* the
+     **offerer** receives in the forwarded `200 OK`, completing the exchange.
+  4. `c:handle_delete/2` — Kamailio tears the call down (`BYE`/`CANCEL`); the
+     call's state is dropped afterwards. Release whatever you allocated.
+
+  Media-wise, each peer ends up negotiating with you: the offerer's offer is
+  answered by the SDP you return from `c:handle_answer/2`, and the offer the
+  answerer responds to is the one you returned from `c:handle_offer/2`.
+  ex_kamailio never forwards one peer's SDP to the other on its own.
 
   Callbacks have no error return — to reject a command, raise. The crash
   is contained to that call's process: ex_kamailio replies to Kamailio
   with a Bencode error and the call is gone.
+
+  ## Callback latency budget
+
+  Kamailio's rtpengine module blocks a SIP worker while it waits for the
+  reply to each command and gives up after `rtpengine_tout_ms` (default
+  1000 ms). Missing that deadline does more than fail the one command:
+  Kamailio marks the node disabled for `rtpengine_disable_tout` (default
+  60 s), failing every call's commands meanwhile. ex_kamailio therefore
+  waits at most `:handler_timeout` (config, default 800 ms) for a
+  callback, then replies with an in-time error — that call fails (the
+  call process is told to tear down; `c:handle_delete/2` still runs) but
+  the node stays up. Keep slow work (transcoder warm-up, external
+  lookups) out of these callbacks; if you must raise `:handler_timeout`,
+  raise Kamailio's `rtpengine_tout_ms` with it.
   """
 
   alias ExKamailio.Session

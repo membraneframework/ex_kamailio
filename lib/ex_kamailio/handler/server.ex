@@ -32,31 +32,33 @@ defmodule ExKamailio.Handler.Server do
     end
   end
 
-  # The catch clauses turn a dead/absent call process into {:error, ...}, so one
-  # bad call can't take the shared WebSocket caller down with it.
-
   @spec call_offer(String.t(), ExKamailio.Session.t()) :: {:ok, binary()} | {:error, term()}
-  def call_offer(call_id, session) do
-    GenServer.call(via(call_id), {__MODULE__, :offer, session})
-  catch
-    :exit, {:noproc, _} -> {:error, :unknown}
-    :exit, reason -> {:error, {:down, reason}}
-  end
+  def call_offer(call_id, session), do: request(call_id, {__MODULE__, :offer, session})
 
   @spec call_answer(String.t(), map()) :: {:ok, binary()} | {:error, term()}
-  def call_answer(call_id, answer_fields) do
-    GenServer.call(via(call_id), {__MODULE__, :answer, answer_fields})
-  catch
-    :exit, {:noproc, _} -> {:error, :unknown}
-    :exit, reason -> {:error, {:down, reason}}
-  end
+  def call_answer(call_id, answer_fields), do: request(call_id, {__MODULE__, :answer, answer_fields})
 
   @spec call_delete(String.t()) :: :ok | {:error, term()}
-  def call_delete(call_id) do
-    GenServer.call(via(call_id), {__MODULE__, :delete})
+  def call_delete(call_id), do: request(call_id, {__MODULE__, :delete})
+
+  # A dead/absent call process becomes {:error, ...} instead of taking the
+  # shared WebSocket caller down. The timeout must stay under Kamailio's
+  # rtpengine_tout_ms (default 1000 ms) — a missed deadline gets the node
+  # disabled for 60 s. The abort cast queues behind the slow callback, so the
+  # call still tears down (handle_delete included) once that callback returns.
+  defp request(call_id, request) do
+    timeout = Application.get_env(:ex_kamailio, :handler_timeout, 800)
+    GenServer.call(via(call_id), request, timeout)
   catch
-    :exit, {:noproc, _} -> {:error, :unknown}
-    :exit, reason -> {:error, {:down, reason}}
+    :exit, {:timeout, _} ->
+      GenServer.cast(via(call_id), {__MODULE__, :abort})
+      {:error, :timeout}
+
+    :exit, {:noproc, _} ->
+      {:error, :unknown}
+
+    :exit, reason ->
+      {:error, {:down, reason}}
   end
 
   def start_link({call_id, _impl, _opts} = arg) do
@@ -106,7 +108,7 @@ defmodule ExKamailio.Handler.Server do
       state.session
       | state: :answered,
         to_tag: fields.to_tag,
-        callee_remote: fields.callee_remote,
+        answerer_remote: fields.answerer_remote,
         answer_sdp: fields.answer_sdp
     }
 
@@ -123,6 +125,13 @@ defmodule ExKamailio.Handler.Server do
   def handle_call({__MODULE__, :delete}, _from, state) do
     run_delete(state)
     {:stop, :normal, :ok, state}
+  end
+
+  @impl true
+  def handle_cast({__MODULE__, :abort}, state) do
+    Logger.warning("call #{state.call_id} missed the reply deadline; tearing down")
+    run_delete(state)
+    {:stop, :normal, state}
   end
 
   @impl true

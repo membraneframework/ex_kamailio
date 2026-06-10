@@ -7,11 +7,11 @@ defmodule RelayHandler do
   codecs. This handler is what binds sockets, picks ports and runs the media —
   and it builds the relay one leg at a time, in step with the dialog:
 
-    * `handle_offer/2`  — pick the local port the *callee* will send to, start
-      the pipeline with the callee→caller leg (bound to that port, forwarding
-      to the caller), and advertise it in the reply SDP.
-    * `handle_answer/2` — pick the local port the *caller* will send to, add
-      the caller→callee leg to the running pipeline, and advertise it.
+    * `handle_offer/2`  — pick the local port the *answerer* will send to, start
+      the pipeline with the answerer→offerer leg (bound to that port, forwarding
+      to the offerer), and advertise it in the reply SDP.
+    * `handle_answer/2` — pick the local port the *offerer* will send to, add
+      the offerer→answerer leg to the running pipeline, and advertise it.
     * `handle_delete/2` — terminate the pipeline.
 
   ex_kamailio keeps a separate handler state per `call_id`, so the pipeline pid
@@ -27,51 +27,51 @@ defmodule RelayHandler do
   @impl true
   def init(_opts) do
     media_ip = resolve_media_ip(Application.get_env(:relay_handler, :media_ip, "auto"))
-    {:ok, %{media_ip: media_ip, pipeline: nil, caller_local: nil, callee_local: nil}}
+    {:ok, %{media_ip: media_ip, pipeline: nil, offerer_local: nil, answerer_local: nil}}
   end
 
   @impl true
   def handle_offer(session, state) do
-    # This port goes into the rewritten INVITE — the port the *callee* sends to.
-    # Start the callee→caller leg now; media flows once the callee answers.
-    local = checkout(state.media_ip, {session.call_id, :caller})
+    # This port goes into the rewritten INVITE — the port the *answerer* sends
+    # to. Start the answerer→offerer leg now; media flows once the peer answers.
+    local = checkout(state.media_ip, {session.call_id, :offerer})
 
     Logger.info(
-      "[relay] offer call=#{session.call_id} caller remote=#{inspect(session.caller_remote)} " <>
+      "[relay] offer call=#{session.call_id} offerer remote=#{inspect(session.offerer_remote)} " <>
         "advertising local=#{inspect(local)}"
     )
 
-    case start_pipeline(session.call_id, local.rtp_port, session.caller_remote) do
+    case start_pipeline(session.call_id, local.rtp_port, session.offerer_remote) do
       {:ok, pid} ->
-        {:ok, pcmu_sdp(local), %{state | pipeline: pid, caller_local: local}}
+        {:ok, pcmu_sdp(local), %{state | pipeline: pid, offerer_local: local}}
 
       {:error, reason} ->
-        PortPool.release({session.call_id, :caller}, local.rtp_port)
+        PortPool.release({session.call_id, :offerer}, local.rtp_port)
         raise "pipeline start failed for #{session.call_id}: #{inspect(reason)}"
     end
   end
 
   @impl true
   def handle_answer(session, state) do
-    # This port goes back to the caller in 200 OK — the port the *caller* sends
-    # to. Add the caller→callee leg: listen on it, forward to the callee.
-    local = checkout(state.media_ip, {session.call_id, :callee})
+    # This port goes back to the offerer in 200 OK — the port the *offerer*
+    # sends to. Add the offerer→answerer leg: listen on it, forward onwards.
+    local = checkout(state.media_ip, {session.call_id, :answerer})
 
     Logger.info(
-      "[relay] answer call=#{session.call_id} callee remote=#{inspect(session.callee_remote)} " <>
+      "[relay] answer call=#{session.call_id} answerer remote=#{inspect(session.answerer_remote)} " <>
         "advertising local=#{inspect(local)}"
     )
 
-    send(state.pipeline, {:add_leg, local.rtp_port, session.callee_remote})
-    {:ok, pcmu_sdp(local), %{state | callee_local: local}}
+    send(state.pipeline, {:add_leg, local.rtp_port, session.answerer_remote})
+    {:ok, pcmu_sdp(local), %{state | answerer_local: local}}
   end
 
   @impl true
   def handle_delete(session, state) do
     Logger.info("[relay] delete call=#{session.call_id}")
     stop_pipeline(state.pipeline)
-    release(state.caller_local, {session.call_id, :caller})
-    release(state.callee_local, {session.call_id, :callee})
+    release(state.offerer_local, {session.call_id, :offerer})
+    release(state.answerer_local, {session.call_id, :answerer})
     {:ok, state}
   end
 

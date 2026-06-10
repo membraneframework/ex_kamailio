@@ -65,6 +65,28 @@ defmodule ExKamailio.Handler.ServerTest do
     end
   end
 
+  defmodule SlowHandler do
+    use ExKamailio.Handler
+
+    @impl true
+    def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
+
+    @impl true
+    def handle_offer(_session, st) do
+      Process.sleep(200)
+      {:ok, "offer-sdp", st}
+    end
+
+    @impl true
+    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
+
+    @impl true
+    def handle_delete(session, st) do
+      send(st.report_to, {:delete, session.call_id})
+      {:ok, st}
+    end
+  end
+
   defmodule CrashHandler do
     use ExKamailio.Handler
 
@@ -90,7 +112,7 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   defp answer_fields(to_tag) do
-    %{to_tag: to_tag, answer_sdp: nil, callee_remote: nil}
+    %{to_tag: to_tag, answer_sdp: nil, answerer_remote: nil}
   end
 
   defp registered?(call_id), do: Registry.lookup(ExKamailio.CallRegistry, call_id) != []
@@ -187,6 +209,21 @@ defmodule ExKamailio.Handler.ServerTest do
 
     assert_receive {:timeout, "c6"}, 500
     assert registered?("c6")
+  end
+
+  test "an offer that misses the reply deadline errors in time, then the call tears down" do
+    prev = Application.get_env(:ex_kamailio, :handler_timeout)
+    Application.put_env(:ex_kamailio, :handler_timeout, 50)
+    on_exit(fn -> Application.put_env(:ex_kamailio, :handler_timeout, prev) end)
+
+    {:ok, pid} = Handler.Server.start_call("c8", SlowHandler, report_to: self())
+    ref = Process.monitor(pid)
+
+    assert {:error, :timeout} = Handler.Server.call_offer("c8", offer_session("c8"))
+    # The abort queues behind the slow callback: delete runs once it returns.
+    assert_receive {:delete, "c8"}, 500
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+    assert eventually_unregistered("c8")
   end
 
   test "a crashing offer becomes {:error, _} and leaves no registered process" do

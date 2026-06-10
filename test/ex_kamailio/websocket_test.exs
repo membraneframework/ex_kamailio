@@ -110,7 +110,7 @@ defmodule ExKamailio.WebSocketTest do
       assert session.call_id == "call-1"
       assert session.from_tag == "f1"
       assert session.state == :offered
-      assert session.caller_remote.rtp_port == 49_170
+      assert session.offerer_remote.rtp_port == 49_170
     end
   end
 

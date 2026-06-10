@@ -38,7 +38,7 @@ defmodule ExKamailio.WebSocket do
             dispatch(cmd, cookie, decoded, state)
 
           _ ->
-            {:push, reply_error(cookie, "unsupported"), state}
+            push_error(cookie, "unsupported", state)
         end
 
       _ ->
@@ -62,117 +62,95 @@ defmodule ExKamailio.WebSocket do
   # -- command dispatch --
 
   defp dispatch("ping", cookie, _cmd, state) do
-    {:push, encode_reply(cookie, %{result: "pong"}), state}
+    push(cookie, %{result: "pong"}, state)
   end
 
-  defp dispatch("offer", cookie, cmd, state), do: do_offer(cookie, cmd, state)
-  defp dispatch("answer", cookie, cmd, state), do: do_answer(cookie, cmd, state)
-  defp dispatch("delete", cookie, cmd, state), do: do_delete(cookie, cmd, state)
+  defp dispatch("offer", cookie, cmd, state) do
+    with_sdp(cookie, cmd, state, fn offer_sdp ->
+      call_id = fetch_id(cmd, "call-id")
 
-  defp dispatch(other, cookie, _cmd, state) do
-    Logger.warning("unknown rtpengine command: #{inspect(other)}")
-    {:push, reply_error(cookie, "unsupported"), state}
+      session = %Session{
+        call_id: call_id,
+        from_tag: fetch_id(cmd, "from-tag"),
+        state: :offered,
+        offerer_remote: SDP.first_audio_endpoint(offer_sdp),
+        offer_sdp: offer_sdp
+      }
+
+      with {:ok, _pid} <-
+             Handler.Server.start_call(call_id, state.handler_mod, state.handler_opts),
+           {:ok, wire_sdp} <- Handler.Server.call_offer(call_id, session) do
+        push(cookie, %{result: "ok", sdp: wire_sdp}, state)
+      else
+        {:error, reason} ->
+          Logger.error("handler offer failed: #{inspect(reason)}")
+          push_error(cookie, "handler offer failed", state)
+      end
+    end)
   end
 
-  # -- offer: parse SDP, hand off to the call process --
+  defp dispatch("answer", cookie, cmd, state) do
+    with_sdp(cookie, cmd, state, fn answer_sdp ->
+      fields = %{
+        to_tag: fetch_id(cmd, "to-tag"),
+        answer_sdp: answer_sdp,
+        answerer_remote: SDP.first_audio_endpoint(answer_sdp)
+      }
 
-  defp do_offer(cookie, cmd, state) do
-    call_id = fetch_id(cmd, "call-id")
-    from_tag = fetch_id(cmd, "from-tag")
+      case Handler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do
+        {:ok, wire_sdp} ->
+          push(cookie, %{result: "ok", sdp: wire_sdp}, state)
 
-    case SDP.parse(Map.get(cmd, "sdp")) do
-      {:ok, offer_sdp} ->
-        session = %Session{
-          call_id: call_id,
-          from_tag: from_tag,
-          state: :offered,
-          caller_remote: SDP.first_audio_endpoint(offer_sdp),
-          offer_sdp: offer_sdp
-        }
+        {:error, reason} when reason in [:unknown, :late] ->
+          Logger.warning("answer not pending: #{inspect(reason)}")
+          push_error(cookie, "unknown call", state)
 
-        offer_call(cookie, call_id, session, state)
-
-      {:error, reason} ->
-        Logger.error("offer SDP parse failed: #{inspect(reason)}")
-        {:push, reply_error(cookie, "invalid sdp"), state}
-    end
+        {:error, reason} ->
+          Logger.error("handler answer failed: #{inspect(reason)}")
+          push_error(cookie, "handler answer failed", state)
+      end
+    end)
   end
 
-  defp offer_call(cookie, call_id, session, state) do
-    with {:ok, _pid} <- Handler.Server.start_call(call_id, state.handler_mod, state.handler_opts),
-         {:ok, wire_sdp} <- Handler.Server.call_offer(call_id, session) do
-      {:push, encode_reply(cookie, %{result: "ok", sdp: wire_sdp}), state}
-    else
-      {:error, reason} ->
-        Logger.error("handler offer failed: #{inspect(reason)}")
-        {:push, reply_error(cookie, "handler offer failed"), state}
-    end
-  end
-
-  # -- answer: parse SDP, finalize the call --
-
-  defp do_answer(cookie, cmd, state) do
-    call_id = fetch_id(cmd, "call-id")
-    to_tag = fetch_id(cmd, "to-tag")
-
-    case SDP.parse(Map.get(cmd, "sdp")) do
-      {:ok, answer_sdp} ->
-        fields = %{
-          to_tag: to_tag,
-          answer_sdp: answer_sdp,
-          callee_remote: SDP.first_audio_endpoint(answer_sdp)
-        }
-
-        answer_call(cookie, call_id, fields, state)
-
-      {:error, reason} ->
-        Logger.error("answer SDP parse failed: #{inspect(reason)}")
-        {:push, reply_error(cookie, "invalid sdp"), state}
-    end
-  end
-
-  defp answer_call(cookie, call_id, fields, state) do
-    case Handler.Server.call_answer(call_id, fields) do
-      {:ok, wire_sdp} ->
-        {:push, encode_reply(cookie, %{result: "ok", sdp: wire_sdp}), state}
-
-      {:error, reason} when reason in [:unknown, :late] ->
-        Logger.warning("answer for call_id=#{inspect(call_id)} not pending: #{inspect(reason)}")
-        {:push, reply_error(cookie, "unknown call"), state}
-
-      {:error, reason} ->
-        Logger.error("handler answer failed: #{inspect(reason)}")
-        {:push, reply_error(cookie, "handler answer failed"), state}
-    end
-  end
-
-  # -- delete: tear down the call process --
-
-  defp do_delete(cookie, cmd, state) do
-    call_id = fetch_id(cmd, "call-id")
-
-    case Handler.Server.call_delete(call_id) do
+  defp dispatch("delete", cookie, cmd, state) do
+    case Handler.Server.call_delete(fetch_id(cmd, "call-id")) do
       :ok ->
-        {:push, encode_reply(cookie, %{result: "ok"}), state}
+        push(cookie, %{result: "ok"}, state)
 
       {:error, :unknown} ->
-        {:push, reply_error(cookie, "unknown call"), state}
+        push_error(cookie, "unknown call", state)
 
       {:error, _down} ->
         # Process already gone — the call is torn down, which is what delete wants.
-        {:push, encode_reply(cookie, %{result: "ok"}), state}
+        push(cookie, %{result: "ok"}, state)
     end
+  end
+
+  defp dispatch(other, cookie, _cmd, state) do
+    Logger.warning("unknown rtpengine command: #{inspect(other)}")
+    push_error(cookie, "unsupported", state)
   end
 
   # -- bencode/wire helpers --
 
-  defp encode_reply(cookie, payload) do
-    body = payload |> Bento.encode!() |> IO.iodata_to_binary()
-    {:text, cookie <> " " <> body}
+  defp with_sdp(cookie, cmd, state, fun) do
+    case SDP.parse(Map.get(cmd, "sdp")) do
+      {:ok, sdp} ->
+        fun.(sdp)
+
+      {:error, reason} ->
+        Logger.error("#{cmd["command"]} SDP parse failed: #{inspect(reason)}")
+        push_error(cookie, "invalid sdp", state)
+    end
   end
 
-  defp reply_error(cookie, reason) do
-    encode_reply(cookie, %{"result" => "error", "error-reason" => reason})
+  defp push(cookie, payload, state) do
+    body = payload |> Bento.encode!() |> IO.iodata_to_binary()
+    {:push, {:text, cookie <> " " <> body}, state}
+  end
+
+  defp push_error(cookie, reason, state) do
+    push(cookie, %{"result" => "error", "error-reason" => reason}, state)
   end
 
   defp fetch_id(cmd, key, default \\ "unknown") do
