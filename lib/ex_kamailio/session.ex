@@ -13,11 +13,12 @@ defmodule ExKamailio.Session do
   - `answer_reply_sdp` — the SDP text we sent back to Kamailio on the first
     answer. Cached so retransmitted answer commands can be served
     idempotently without re-invoking the handler.
-  - `handler_state` — the user handler's per-call state. Stored here (not in
-    the WebSocket process) because Kamailio's rtpengine client pools several
-    WebSocket connections and spreads one call's offer/answer/delete across
-    them; keying the state by `call_id` in the shared table is what lets the
-    `delete` callback see what `answer` stored.
+  - `handler_state` — the user handler's per-call state. It lives in the call's
+    own process (`ExKamailio.Handler.Server`), which is looked up by `call_id`
+    through `ExKamailio.CallRegistry`. The registry is the shared demux that lets
+    `answer`/`delete` reach the same handler even though Kamailio's rtpengine
+    client pools several WebSocket connections and spreads one call's
+    offer/answer/delete across them.
   """
 
   alias ExKamailio.Endpoint
@@ -35,8 +36,7 @@ defmodule ExKamailio.Session do
           offer_sdp: ExSDP.t() | nil,
           answer_sdp: ExSDP.t() | nil,
           answer_reply_sdp: String.t() | nil,
-          handler_state: term(),
-          touched_at: integer() | nil
+          handler_state: term()
         }
 
   defstruct [
@@ -49,7 +49,6 @@ defmodule ExKamailio.Session do
     :offer_sdp,
     :answer_sdp,
     :answer_reply_sdp,
-    :handler_state,
-    :touched_at
+    :handler_state
   ]
 end

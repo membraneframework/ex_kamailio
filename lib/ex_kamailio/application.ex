@@ -7,7 +7,8 @@ defmodule ExKamailio.Application do
     ws_port = Application.fetch_env!(:ex_kamailio, :ws_port)
 
     children = [
-      ExKamailio.SessionTable,
+      {Registry, keys: :unique, name: ExKamailio.CallRegistry},
+      {DynamicSupervisor, name: ExKamailio.CallSupervisor, strategy: :one_for_one},
       {Bandit, plug: ExKamailio.Router, scheme: :http, port: ws_port}
     ]
 

@@ -3,27 +3,25 @@ defmodule ExKamailio.WebSocket do
   WebSock handler for Kamailio's rtpengine `ng` control protocol over
   WebSocket.
 
-  Each Kamailio connection produces one WebSocket process, which:
+  Each Kamailio connection produces one WebSocket process, which is a thin
+  router: it decodes the `<cookie> <payload>` wire format, parses the SDP into
+  an `ExKamailio.Session`, and dispatches the command to the call's own process
+  (`ExKamailio.Handler.Server`, looked up by `call_id` in
+  `ExKamailio.CallRegistry`). The call process runs the user's `Handler`
+  callbacks and holds that call's state; this process only ships SDP in and out.
 
-  1. Calls `c:ExKamailio.Handler.init/1` to set up per-call state.
-  2. On each incoming Bencode frame, decodes the `<cookie> <payload>`
-     wire format, parses the SDP into an `ExKamailio.Session`, and
-     dispatches to the user's `Handler` callbacks.
-  3. Encodes the handler's reply SDP back to Bencode and pushes it.
+  The library is a pure SDP shuttle: it does not allocate media ports or pick
+  codecs. The handler owns its media endpoints and advertises them in the SDP it
+  returns.
 
-  The library is a pure SDP shuttle: it does not allocate media ports or
-  pick codecs. The handler owns its media endpoints and advertises them in
-  the SDP it returns.
-
-  This module is the only ex_kamailio code that talks the rtpengine
-  protocol directly. Everything user-facing flows through
-  `ExKamailio.Handler`.
+  This module is the only ex_kamailio code that talks the rtpengine protocol
+  directly. Everything user-facing flows through `ExKamailio.Handler`.
   """
 
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{SDP, Session, SessionTable}
+  alias ExKamailio.{Handler, SDP, Session}
 
   @impl true
   def init(_args) do
@@ -80,110 +78,56 @@ defmodule ExKamailio.WebSocket do
     {:push, reply_error(cookie, "unsupported"), state}
   end
 
-  # -- offer: parse SDP, hand off to user handler --
+  # -- offer: parse SDP, hand off to the call process --
 
   defp do_offer(cookie, cmd, state) do
     call_id = fetch_id(cmd, "call-id")
     from_tag = fetch_id(cmd, "from-tag")
-    offer_sdp_text = Map.get(cmd, "sdp")
 
-    with {:ok, offer_sdp} <- SDP.parse(offer_sdp_text) do
-      session = %Session{
-        call_id: call_id,
-        from_tag: from_tag,
-        state: :offered,
-        caller_remote: SDP.first_audio_endpoint(offer_sdp),
-        offer_sdp: offer_sdp
-      }
+    case SDP.parse(Map.get(cmd, "sdp")) do
+      {:ok, offer_sdp} ->
+        session = %Session{
+          call_id: call_id,
+          from_tag: from_tag,
+          state: :offered,
+          caller_remote: SDP.first_audio_endpoint(offer_sdp),
+          offer_sdp: offer_sdp
+        }
 
-      # init/1 seeds this call's handler state; the live state then lives in the
-      # Session (global, keyed by call_id) and is threaded through answer/delete.
-      result =
-        safe_callback("offer", fn ->
-          {:ok, seed_state} = state.handler_mod.init(state.handler_opts)
-          state.handler_mod.offer(session, seed_state)
-        end)
+        offer_call(cookie, call_id, session, state)
 
-      case result do
-        {:ok, reply_sdp, hstate} ->
-          :ok = SessionTable.put(%Session{session | handler_state: hstate})
-          {:push, encode_reply(cookie, %{result: "ok", sdp: to_sdp_string(reply_sdp)}), state}
-
-        {:error, reason, _hstate} ->
-          Logger.error("handler offer rejected: #{inspect(reason)}")
-          {:push, reply_error(cookie, "handler rejected offer"), state}
-      end
-    else
       {:error, reason} ->
         Logger.error("offer SDP parse failed: #{inspect(reason)}")
         {:push, reply_error(cookie, "invalid sdp"), state}
     end
   end
 
-  # -- answer: parse SDP, finalize session --
+  defp offer_call(cookie, call_id, session, state) do
+    with {:ok, _pid} <- Handler.Server.start_call(call_id, state.handler_mod, state.handler_opts),
+         {:ok, wire_sdp} <- Handler.Server.call_offer(call_id, session) do
+      {:push, encode_reply(cookie, %{result: "ok", sdp: wire_sdp}), state}
+    else
+      {:error, reason} ->
+        Logger.error("handler offer rejected: #{inspect(reason)}")
+        {:push, reply_error(cookie, "handler rejected offer"), state}
+    end
+  end
+
+  # -- answer: parse SDP, finalize the call --
 
   defp do_answer(cookie, cmd, state) do
     call_id = fetch_id(cmd, "call-id")
     to_tag = fetch_id(cmd, "to-tag")
-    answer_sdp_text = Map.get(cmd, "sdp")
 
-    case SessionTable.get(call_id) do
-      %Session{state: :answered, to_tag: ^to_tag, answer_reply_sdp: reply_sdp}
-      when is_binary(reply_sdp) ->
-        # Retransmitted answer for the same dialog — Kamailio forwards 200 OK
-        # retransmissions through onreply_route, so rtpengine_answer() fires
-        # again. The rtpengine protocol expects idempotent answers; replay
-        # the cached reply instead of re-invoking the handler (which would
-        # try to spawn a second pipeline / re-allocate ports).
-        {:push, encode_reply(cookie, %{result: "ok", sdp: reply_sdp}), state}
-
-      session ->
-        do_fresh_answer(cookie, call_id, to_tag, answer_sdp_text, session, state)
-    end
-  end
-
-  defp do_fresh_answer(cookie, call_id, to_tag, answer_sdp_text, prior_session, state) do
-    with %Session{state: :offered} = session <- prior_session,
-         {:ok, answer_sdp} <- SDP.parse(answer_sdp_text) do
-      session = %Session{
-        session
-        | state: :answered,
+    case SDP.parse(Map.get(cmd, "sdp")) do
+      {:ok, answer_sdp} ->
+        fields = %{
           to_tag: to_tag,
-          callee_remote: SDP.first_audio_endpoint(answer_sdp),
-          answer_sdp: answer_sdp
-      }
+          answer_sdp: answer_sdp,
+          callee_remote: SDP.first_audio_endpoint(answer_sdp)
+        }
 
-      result =
-        safe_callback("answer", fn ->
-          state.handler_mod.answer(session, session.handler_state)
-        end)
-
-      case result do
-        {:ok, reply_sdp, hstate} ->
-          wire_sdp = to_sdp_string(reply_sdp)
-
-          :ok =
-            SessionTable.put(%Session{
-              session
-              | answer_reply_sdp: wire_sdp,
-                handler_state: hstate
-            })
-
-          reply = encode_reply(cookie, %{result: "ok", sdp: wire_sdp})
-          {:push, reply, state}
-
-        {:error, reason, _hstate} ->
-          Logger.error("handler answer rejected: #{inspect(reason)}")
-          {:push, reply_error(cookie, "handler rejected answer"), state}
-      end
-    else
-      nil ->
-        Logger.warning("answer for unknown call_id=#{inspect(call_id)}")
-        {:push, reply_error(cookie, "unknown call"), state}
-
-      %Session{state: actual} ->
-        Logger.warning("late answer for call_id=#{inspect(call_id)} in state=#{inspect(actual)}")
-        {:push, reply_error(cookie, "unknown call"), state}
+        answer_call(cookie, call_id, fields, state)
 
       {:error, reason} ->
         Logger.error("answer SDP parse failed: #{inspect(reason)}")
@@ -191,52 +135,40 @@ defmodule ExKamailio.WebSocket do
     end
   end
 
-  # -- delete: tear down session --
+  defp answer_call(cookie, call_id, fields, state) do
+    case Handler.Server.call_answer(call_id, fields) do
+      {:ok, wire_sdp} ->
+        {:push, encode_reply(cookie, %{result: "ok", sdp: wire_sdp}), state}
+
+      {:error, reason} when reason in [:unknown, :late] ->
+        Logger.warning("answer for call_id=#{inspect(call_id)} not pending: #{inspect(reason)}")
+        {:push, reply_error(cookie, "unknown call"), state}
+
+      {:error, reason} ->
+        Logger.error("handler answer rejected: #{inspect(reason)}")
+        {:push, reply_error(cookie, "handler rejected answer"), state}
+    end
+  end
+
+  # -- delete: tear down the call process --
 
   defp do_delete(cookie, cmd, state) do
     call_id = fetch_id(cmd, "call-id")
 
-    case SessionTable.get(call_id) do
-      %Session{} = session ->
-        # Best-effort teardown: even if the handler's delete crashes, we still
-        # drop the session so a buggy handler can't leak it.
-        safe_callback("delete", fn ->
-          state.handler_mod.delete(session, session.handler_state)
-        end)
-
-        :ok = SessionTable.delete(call_id)
-
+    case Handler.Server.call_delete(call_id) do
+      :ok ->
         {:push, encode_reply(cookie, %{result: "ok"}), state}
 
-      nil ->
+      {:error, :unknown} ->
         {:push, reply_error(cookie, "unknown call"), state}
+
+      {:error, _down} ->
+        # Process already gone — the call is torn down, which is what delete wants.
+        {:push, encode_reply(cookie, %{result: "ok"}), state}
     end
   end
 
-  # Run a handler callback, turning any raise/throw/exit into the same
-  # `{:error, reason, _}` reply the callback could have returned itself. A buggy
-  # handler thus rejects one call cleanly instead of crashing the shared,
-  # connection-pooled WebSocket process.
-  defp safe_callback(label, fun) do
-    fun.()
-  rescue
-    e ->
-      Logger.error(
-        "handler #{label} crashed: #{Exception.message(e)}\n" <>
-          Exception.format_stacktrace(__STACKTRACE__)
-      )
-
-      {:error, {:crash, e}, nil}
-  catch
-    kind, reason ->
-      Logger.error("handler #{label} #{inspect(kind)}: #{inspect(reason)}")
-      {:error, {kind, reason}, nil}
-  end
-
   # -- bencode/wire helpers --
-
-  defp to_sdp_string(sdp) when is_binary(sdp), do: sdp
-  defp to_sdp_string(%ExSDP{} = sdp), do: to_string(sdp)
 
   defp encode_reply(cookie, payload) do
     body = payload |> Bento.encode!() |> IO.iodata_to_binary()

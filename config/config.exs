@@ -1,6 +1,6 @@
 import Config
 
-config :ex_kamailio, ws_port: 4003
+config :ex_kamailio, ws_port: 4003, call_timeout: :timer.minutes(30)
 
 # Tests drive WebSocket.handle_in/2 directly, so let the OS pick an ephemeral
 # port for the embedded Bandit server instead of colliding on 4003.

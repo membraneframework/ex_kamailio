@@ -1,12 +1,11 @@
 defmodule ExKamailio.WebSocketTest do
   use ExUnit.Case, async: false
+  @moduletag :capture_log
 
-  alias ExKamailio.{SDP, SessionTable, WebSocket}
-
-  # The handler owns its media endpoint now; each test handler picks a fixed one.
+  alias ExKamailio.{SDP, WebSocket}
 
   defmodule TestHandler do
-    @behaviour ExKamailio.Handler
+    use ExKamailio.Handler
 
     @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
 
@@ -33,19 +32,13 @@ defmodule ExKamailio.WebSocketTest do
   end
 
   defmodule RejectingHandler do
-    @behaviour ExKamailio.Handler
-
-    @impl true
-    def init(_opts), do: {:ok, %{}}
+    use ExKamailio.Handler
 
     @impl true
     def offer(_s, st), do: {:error, :nope, st}
 
     @impl true
     def answer(_s, st), do: {:error, :nope, st}
-
-    @impl true
-    def delete(_s, st), do: {:ok, st}
   end
 
   @offer_sdp """
@@ -62,11 +55,26 @@ defmodule ExKamailio.WebSocketTest do
     Application.put_env(:ex_kamailio, :handler, TestHandler)
     Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
 
-    stop_supervised(SessionTable)
-    {:ok, _} = start_supervised(SessionTable)
+    start_supervised!({Registry, keys: :unique, name: ExKamailio.CallRegistry})
+
+    start_supervised!(
+      {DynamicSupervisor, name: ExKamailio.CallSupervisor, strategy: :one_for_one}
+    )
 
     {:ok, state} = WebSocket.init([])
     {:ok, state: state}
+  end
+
+  defp registered?(call_id), do: Registry.lookup(ExKamailio.CallRegistry, call_id) != []
+
+  # Registry unregisters on its own receipt of the call process's :DOWN, which
+  # lags the command reply — poll rather than assume it's immediate.
+  defp eventually_unregistered(call_id, tries \\ 50) do
+    cond do
+      not registered?(call_id) -> true
+      tries == 0 -> false
+      true -> Process.sleep(5) && eventually_unregistered(call_id, tries - 1)
+    end
   end
 
   defp frame(cookie, payload) do
@@ -131,6 +139,7 @@ defmodule ExKamailio.WebSocketTest do
                WebSocket.handle_in({msg, [opcode: :text]}, state)
 
       assert decode!(reply)["result"] == "error"
+      assert eventually_unregistered("call-2")
     end
   end
 
@@ -181,7 +190,7 @@ defmodule ExKamailio.WebSocketTest do
   end
 
   describe "delete" do
-    test "invokes handler.delete and releases the session", %{state: state} do
+    test "invokes handler.delete and drops the call process", %{state: state} do
       offer_msg =
         frame("aaaaa", %{
           command: "offer",
@@ -200,12 +209,12 @@ defmodule ExKamailio.WebSocketTest do
       assert decode!(reply)["result"] == "ok"
       assert_receive {:offer_called, _}
       assert_receive {:delete_called, _}
-      assert SessionTable.get("call-4") == nil
+      assert eventually_unregistered("call-4")
     end
   end
 
   defmodule MarkingHandler do
-    @behaviour ExKamailio.Handler
+    use ExKamailio.Handler
 
     @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
 
@@ -250,9 +259,9 @@ defmodule ExKamailio.WebSocketTest do
       assert_receive {:deleted, "call-B", "call-B"}
     end
 
-    test "per-call state survives across pooled connections (offer and delete on different WS)" do
-      # offer and delete arrive on different pooled connections; per-call state
-      # lives in the shared SessionTable, so delete still sees what offer stored.
+    test "a call survives across pooled connections (offer and delete on different WS)" do
+      # offer and delete arrive on different pooled connections; the call lives in
+      # its own process, found via the shared registry, so delete still reaches it.
       Application.put_env(:ex_kamailio, :handler, MarkingHandler)
       Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
 
@@ -272,19 +281,13 @@ defmodule ExKamailio.WebSocketTest do
   end
 
   defmodule CrashingHandler do
-    @behaviour ExKamailio.Handler
-
-    @impl true
-    def init(_opts), do: {:ok, %{}}
+    use ExKamailio.Handler
 
     @impl true
     def offer(_s, _st), do: raise("boom")
 
     @impl true
     def answer(_s, _st), do: raise("boom")
-
-    @impl true
-    def delete(_s, st), do: {:ok, st}
   end
 
   describe "handler crash" do
@@ -306,7 +309,7 @@ defmodule ExKamailio.WebSocketTest do
                WebSocket.handle_in({msg, [opcode: :text]}, state)
 
       assert decode!(reply)["result"] == "error"
-      assert SessionTable.get("call-crash") == nil
+      assert eventually_unregistered("call-crash")
     end
   end
 

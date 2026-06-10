@@ -21,11 +21,11 @@ defmodule ExKamailio.Handler do
         def answer(session, state), do: {:ok, reply_sdp, state}
       end
 
-  `use ExKamailio.Handler` declares the behaviour and provides default
-  `c:init/1` (`{:ok, %{}}`) and `c:delete/2` (no-op) implementations, so a
-  handler only has to define `c:offer/2` and `c:answer/2`. Override `init/1`
-  or `delete/2` when you need setup or cleanup. Using `@behaviour
-  ExKamailio.Handler` directly works too — then you must define all four.
+  `use ExKamailio.Handler` declares the behaviour and provides overridable
+  defaults for `c:init/1` (`{:ok, %{}}`), `c:delete/2` (no-op) and
+  `c:handle_timeout/2` (tear the call down), so a handler only has to define
+  `c:offer/2` and `c:answer/2`. Using `@behaviour ExKamailio.Handler` directly
+  works too — then you must define all non-optional callbacks.
 
   Register your handler module in config:
 
@@ -33,16 +33,34 @@ defmodule ExKamailio.Handler do
 
   ## State is per call
 
-  ex_kamailio keeps a separate `state` for each call, keyed by
-  `session.call_id`. `c:init/1` seeds the state for each new call, your
-  callbacks receive and return *that call's* state, and it is discarded on
-  `c:delete/2`. You can safely keep per-call data (a pipeline pid, say) in a
-  bare field — overlapping calls never share or overwrite each other's state.
+  ex_kamailio runs **one process per call** (`ExKamailio.Handler.Server`),
+  looked up by `session.call_id` through `ExKamailio.CallRegistry`. `c:init/1`
+  seeds the state for each new call, that process holds it in its own memory,
+  your callbacks receive and return it, and it is discarded when the process
+  stops on `c:delete/2`. You can safely keep per-call data (a pipeline pid, say)
+  in a bare field — each call has its own process, so overlapping calls never
+  share or overwrite each other's state.
 
-  The state is stored centrally, keyed by `call_id` (not in the WebSocket
-  process), so it is consistent even though Kamailio's rtpengine client pools
-  several WebSocket connections and may deliver one call's `offer`, `answer`
-  and `delete` over different connections.
+  The registry is what keeps a call consistent even though Kamailio's rtpengine
+  client pools several WebSocket connections and may deliver one call's `offer`,
+  `answer` and `delete` over different connections: each lands on an arbitrary
+  WebSocket process, which routes it to the call's process by `call_id`.
+
+  ## Reacting to other processes
+
+  Define the optional `c:handle_info/3` to receive plain messages in the call
+  process — e.g. a `Membrane.Pipeline` or downstream `GenServer` reporting back.
+  The message is delivered alongside the call's `session` and state. Without it,
+  a stray message crashes the call process (`UndefinedFunctionError`).
+
+  ## Idle timeout
+
+  If a call never receives a Kamailio `delete` (dropped signaling), its process
+  would otherwise live forever. Each call arms an idle timer — `:call_timeout`
+  in config, default 30 minutes, reset on `offer`/`answer`. On expiry the
+  library calls `c:handle_timeout/2`; the `use` default tears the call down
+  (runs `c:delete/2`, then stops). Override it to extend the call
+  (`{:noreply, state}`) or to clean up differently before stopping.
 
   ## Lifecycle (per call)
 
@@ -66,8 +84,8 @@ defmodule ExKamailio.Handler do
   alias ExKamailio.Session
 
   @doc """
-  Declares the behaviour and injects default `init/1` and `delete/2`. See the
-  module doc. Both defaults are overridable.
+  Declares the behaviour and injects overridable defaults for `init/1`,
+  `delete/2` and `handle_timeout/2`. See the module doc.
   """
   defmacro __using__(_opts) do
     quote do
@@ -79,7 +97,10 @@ defmodule ExKamailio.Handler do
       @impl true
       def delete(_session, state), do: {:ok, state}
 
-      defoverridable init: 1, delete: 2
+      @impl true
+      def handle_timeout(_session, state), do: {:stop, state}
+
+      defoverridable init: 1, delete: 2, handle_timeout: 2
     end
   end
 
@@ -103,6 +124,9 @@ defmodule ExKamailio.Handler do
 
   @callback handle_info(message :: term(), Session.t(), state()) ::
               {:ok, state()} | {:error, reason(), state()}
+
+  @callback handle_timeout(Session.t(), state()) ::
+              {:stop, state()} | {:noreply, state()}
 
   @callback delete(Session.t(), state()) :: {:ok, state()}
 
