@@ -1,4 +1,4 @@
-defmodule ExKamailio.Handler do
+defmodule ExKamailio.CallHandler do
   @moduledoc """
   Behaviour for user-defined Kamailio rtpengine handlers.
 
@@ -12,7 +12,7 @@ defmodule ExKamailio.Handler do
   via FFmpeg, log it, forward it elsewhere, etc.
 
       defmodule MyApp.KamailioHandler do
-        use ExKamailio.Handler
+        use ExKamailio.CallHandler
 
         @impl true
         def handle_offer(offer, session, state), do: {:ok, reply_sdp, state}
@@ -21,10 +21,10 @@ defmodule ExKamailio.Handler do
         def handle_answer(answer, session, state), do: {:ok, reply_sdp, state}
       end
 
-  `use ExKamailio.Handler` declares the behaviour and provides overridable
+  `use ExKamailio.CallHandler` declares the behaviour and provides overridable
   defaults for `c:init/1` (`{:ok, %{}}`), `c:handle_delete/2` (no-op) and
   `c:handle_timeout/2` (tear the call down), so a handler only has to define
-  `c:handle_offer/3` and `c:handle_answer/3`. Using `@behaviour ExKamailio.Handler` directly
+  `c:handle_offer/3` and `c:handle_answer/3`. Using `@behaviour ExKamailio.CallHandler` directly
   works too — then you must define all non-optional callbacks.
 
   Register your handler module in config:
@@ -33,7 +33,7 @@ defmodule ExKamailio.Handler do
 
   ## State is per call
 
-  ex_kamailio runs **one process per call** (`ExKamailio.Handler.Server`),
+  ex_kamailio runs **one process per call** (`ExKamailio.CallHandler.Server`),
   looked up by `session.call_id` through `ExKamailio.CallRegistry`. `c:init/1`
   seeds the state for each new call, that process holds it in its own memory,
   your callbacks receive and return it, and it is discarded when the process

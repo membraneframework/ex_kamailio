@@ -1,12 +1,12 @@
-defmodule ExKamailio.Handler.ServerTest do
+defmodule ExKamailio.CallHandler.ServerTest do
   use ExUnit.Case, async: false
   @moduletag :capture_log
 
   alias ExKamailio.Session
-  alias ExKamailio.Handler
+  alias ExKamailio.CallHandler
 
   defmodule ApiHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @impl true
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
@@ -37,7 +37,7 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   defmodule MinimalHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @impl true
     def handle_offer(_offer, _session, st), do: {:ok, ExSDP.new(), st}
@@ -47,7 +47,7 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   defmodule ExtendHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @impl true
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
@@ -66,7 +66,7 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   defmodule SlowHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @impl true
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
@@ -88,7 +88,7 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   defmodule CrashHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @impl true
     def handle_offer(_offer, _session, _st), do: raise("boom")
@@ -128,68 +128,68 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   test "offer/answer/delete round trip threads through one process" do
-    {:ok, _} = Handler.Server.start_call("c1", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("c1", ApiHandler, report_to: self())
 
-    assert {:ok, offer_reply} = Handler.Server.call_offer("c1", offer_session("c1"))
+    assert {:ok, offer_reply} = CallHandler.Server.call_offer("c1", offer_session("c1"))
     assert is_binary(offer_reply)
     assert_receive {:offer, "c1"}
 
-    assert {:ok, answer_reply} = Handler.Server.call_answer("c1", answer_fields("t1"))
+    assert {:ok, answer_reply} = CallHandler.Server.call_answer("c1", answer_fields("t1"))
     assert is_binary(answer_reply)
     assert_receive {:answer, "c1", "t1"}
 
-    assert :ok = Handler.Server.call_delete("c1")
+    assert :ok = CallHandler.Server.call_delete("c1")
     assert_receive {:delete, "c1"}
     assert eventually_unregistered("c1")
   end
 
   test "a retransmitted offer replays the cached reply without re-invoking the handler" do
-    {:ok, _} = Handler.Server.start_call("c2a", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("c2a", ApiHandler, report_to: self())
 
-    assert {:ok, reply} = Handler.Server.call_offer("c2a", offer_session("c2a"))
+    assert {:ok, reply} = CallHandler.Server.call_offer("c2a", offer_session("c2a"))
     assert_receive {:offer, "c2a"}
 
-    assert {:ok, ^reply} = Handler.Server.call_offer("c2a", offer_session("c2a"))
+    assert {:ok, ^reply} = CallHandler.Server.call_offer("c2a", offer_session("c2a"))
     refute_receive {:offer, "c2a"}
   end
 
   test "a retransmitted answer replays the cached reply without re-invoking the handler" do
-    {:ok, _} = Handler.Server.start_call("c2", ApiHandler, report_to: self())
-    {:ok, _} = Handler.Server.call_offer("c2", offer_session("c2"))
+    {:ok, _} = CallHandler.Server.start_call("c2", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.call_offer("c2", offer_session("c2"))
 
-    assert {:ok, reply} = Handler.Server.call_answer("c2", answer_fields("t1"))
+    assert {:ok, reply} = CallHandler.Server.call_answer("c2", answer_fields("t1"))
     assert_receive {:answer, "c2", "t1"}
 
-    assert {:ok, ^reply} = Handler.Server.call_answer("c2", answer_fields("t1"))
+    assert {:ok, ^reply} = CallHandler.Server.call_answer("c2", answer_fields("t1"))
     refute_receive {:answer, "c2", "t1"}
   end
 
   test "two calls keep independent state in their own processes" do
-    {:ok, _} = Handler.Server.start_call("a", ApiHandler, report_to: self())
-    {:ok, _} = Handler.Server.start_call("b", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("a", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("b", ApiHandler, report_to: self())
 
-    {:ok, _} = Handler.Server.call_offer("a", offer_session("a"))
-    {:ok, _} = Handler.Server.call_offer("b", offer_session("b"))
+    {:ok, _} = CallHandler.Server.call_offer("a", offer_session("a"))
+    {:ok, _} = CallHandler.Server.call_offer("b", offer_session("b"))
 
-    assert :ok = Handler.Server.call_delete("a")
+    assert :ok = CallHandler.Server.call_delete("a")
     assert_receive {:delete, "a"}
     assert registered?("b")
 
-    assert :ok = Handler.Server.call_delete("b")
+    assert :ok = CallHandler.Server.call_delete("b")
     assert_receive {:delete, "b"}
   end
 
   test "handle_info/3 is delivered with the call's session" do
-    {:ok, pid} = Handler.Server.start_call("c3", ApiHandler, report_to: self())
-    {:ok, _} = Handler.Server.call_offer("c3", offer_session("c3"))
+    {:ok, pid} = CallHandler.Server.start_call("c3", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.call_offer("c3", offer_session("c3"))
 
     send(pid, :ping_from_pipeline)
     assert_receive {:info, "c3", :ping_from_pipeline}
   end
 
   test "a stray message to a handler without handle_info/3 crashes only that call" do
-    {:ok, pid} = Handler.Server.start_call("c4", MinimalHandler, [])
-    {:ok, _} = Handler.Server.call_offer("c4", offer_session("c4"))
+    {:ok, pid} = CallHandler.Server.start_call("c4", MinimalHandler, [])
+    {:ok, _} = CallHandler.Server.call_offer("c4", offer_session("c4"))
     ref = Process.monitor(pid)
 
     send(pid, :stray)
@@ -202,9 +202,9 @@ defmodule ExKamailio.Handler.ServerTest do
     Application.put_env(:ex_kamailio, :call_timeout, 50)
     on_exit(fn -> Application.put_env(:ex_kamailio, :call_timeout, prev) end)
 
-    {:ok, pid} = Handler.Server.start_call("c5", ApiHandler, report_to: self())
+    {:ok, pid} = CallHandler.Server.start_call("c5", ApiHandler, report_to: self())
     ref = Process.monitor(pid)
-    {:ok, _} = Handler.Server.call_offer("c5", offer_session("c5"))
+    {:ok, _} = CallHandler.Server.call_offer("c5", offer_session("c5"))
 
     assert_receive {:delete, "c5"}, 500
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
@@ -216,8 +216,8 @@ defmodule ExKamailio.Handler.ServerTest do
     Application.put_env(:ex_kamailio, :call_timeout, 50)
     on_exit(fn -> Application.put_env(:ex_kamailio, :call_timeout, prev) end)
 
-    {:ok, _} = Handler.Server.start_call("c6", ExtendHandler, report_to: self())
-    {:ok, _} = Handler.Server.call_offer("c6", offer_session("c6"))
+    {:ok, _} = CallHandler.Server.start_call("c6", ExtendHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.call_offer("c6", offer_session("c6"))
 
     assert_receive {:timeout, "c6"}, 500
     assert registered?("c6")
@@ -228,24 +228,24 @@ defmodule ExKamailio.Handler.ServerTest do
     Application.put_env(:ex_kamailio, :handler_timeout, 50)
     on_exit(fn -> Application.put_env(:ex_kamailio, :handler_timeout, prev) end)
 
-    {:ok, pid} = Handler.Server.start_call("c8", SlowHandler, report_to: self())
+    {:ok, pid} = CallHandler.Server.start_call("c8", SlowHandler, report_to: self())
     ref = Process.monitor(pid)
 
-    assert {:error, :timeout} = Handler.Server.call_offer("c8", offer_session("c8"))
+    assert {:error, :timeout} = CallHandler.Server.call_offer("c8", offer_session("c8"))
     assert_receive {:delete, "c8"}, 500
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
     assert eventually_unregistered("c8")
   end
 
   test "a crashing offer becomes {:error, _} and leaves no registered process" do
-    {:ok, _} = Handler.Server.start_call("c7", CrashHandler, [])
+    {:ok, _} = CallHandler.Server.start_call("c7", CrashHandler, [])
 
-    assert {:error, _} = Handler.Server.call_offer("c7", offer_session("c7"))
+    assert {:error, _} = CallHandler.Server.call_offer("c7", offer_session("c7"))
     assert eventually_unregistered("c7")
   end
 
   test "calls for an unknown call_id return {:error, :unknown}" do
-    assert {:error, :unknown} = Handler.Server.call_answer("nope", answer_fields("t1"))
-    assert {:error, :unknown} = Handler.Server.call_delete("nope")
+    assert {:error, :unknown} = CallHandler.Server.call_answer("nope", answer_fields("t1"))
+    assert {:error, :unknown} = CallHandler.Server.call_delete("nope")
   end
 end

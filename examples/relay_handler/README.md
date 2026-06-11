@@ -1,7 +1,7 @@
 # relay_handler
 
 Two-peer RTP relay built on top of `ex_kamailio` and Membrane. The
-`ExKamailio.Handler` callbacks hook Kamailio's `rtpengine` commands
+`ExKamailio.CallHandler` callbacks hook Kamailio's `rtpengine` commands
 (offer / answer / delete) into a `Membrane.Pipeline` that grows one
 unidirectional leg at a time as the SIP dialog progresses.
 

@@ -1,6 +1,6 @@
 defmodule RelayHandler do
   @moduledoc """
-  `ExKamailio.Handler` that relays RTP between two SIP peers through a
+  `ExKamailio.CallHandler` that relays RTP between two SIP peers through a
   Membrane pipeline.
 
   ex_kamailio is a pure SDP shuttle: it owns no media ports and picks no
@@ -18,7 +18,7 @@ defmodule RelayHandler do
   lives directly in this call's state.
   """
 
-  use ExKamailio.Handler
+  use ExKamailio.CallHandler
 
   require Logger
   alias ExKamailio.Endpoint

@@ -18,7 +18,7 @@ Elixir media stack normally requires a lot of glue. `ex_kamailio`
 collapses that glue into one behaviour you implement.
 
 The library deliberately stays Membrane-free — it has no dependency on
-Membrane itself. You implement the `ExKamailio.Handler` behaviour and
+Membrane itself. You implement the `ExKamailio.CallHandler` behaviour and
 decide what to do with the media (Membrane pipeline, FFmpeg subprocess,
 log-only, etc.).
 
@@ -42,7 +42,7 @@ config :ex_kamailio,
   # rtpengine WebSocket connection.
   ws_port: 4003,
 
-  # Your handler module — implements `ExKamailio.Handler`.
+  # Your handler module — implements `ExKamailio.CallHandler`.
   handler: MyApp.KamailioHandler
 ```
 
@@ -55,7 +55,7 @@ relay_handler example auto-detects this host's first non-loopback IPv4.
 
 ```elixir
 defmodule MyApp.KamailioHandler do
-  use ExKamailio.Handler
+  use ExKamailio.CallHandler
 
   alias ExKamailio.SDP
 
@@ -109,16 +109,16 @@ so far) the offerer is the caller.
 1. The offerer (A) sends `INVITE` + SDP to Kamailio.
 2. Kamailio forwards the SDP to `ex_kamailio` over the rtpengine
    WebSocket as an `offer` command.
-3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.Handler.handle_offer/3`.
+3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.CallHandler.handle_offer/3`.
    Your handler binds its media socket and returns an SDP advertising it.
 4. `ex_kamailio` sends that SDP back to Kamailio, which puts it into the
    `INVITE` forwarded to the answerer (B) — it is the offer B sees.
 5. B replies `200 OK` + SDP. Kamailio forwards it as an `answer`
-   command and `ex_kamailio` calls `c:ExKamailio.Handler.handle_answer/3`.
+   command and `ex_kamailio` calls `c:ExKamailio.CallHandler.handle_answer/3`.
 6. Your handler returns the SDP that goes back to A as the answer in
    the forwarded `200 OK`.
 7. On call teardown, Kamailio sends `delete`, ex_kamailio calls
-   `c:ExKamailio.Handler.handle_delete/2`, and your handler releases whatever it
+   `c:ExKamailio.CallHandler.handle_delete/2`, and your handler releases whatever it
    allocated.
 
 ## NAT and dynamic IPs

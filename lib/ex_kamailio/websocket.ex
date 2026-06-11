@@ -6,18 +6,18 @@ defmodule ExKamailio.WebSocket do
   Each Kamailio connection produces one WebSocket process, which is a thin
   router: it decodes the `<cookie> <payload>` wire format, parses the SDP into
   an `ExKamailio.Session`, and dispatches the command to the call's own process
-  (`ExKamailio.Handler.Server`, looked up by `call_id` in
-  `ExKamailio.CallRegistry`). The call process runs the user's `Handler`
+  (`ExKamailio.CallHandler.Server`, looked up by `call_id` in
+  `ExKamailio.CallRegistry`). The call process runs the user's `CallHandler`
   callbacks and holds that call's state; this process only ships SDP in and out.
 
   This module is the only ex_kamailio code that talks the rtpengine protocol
-  directly. Everything user-facing flows through `ExKamailio.Handler`.
+  directly. Everything user-facing flows through `ExKamailio.CallHandler`.
   """
 
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{Handler, SDP, Session}
+  alias ExKamailio.{CallHandler, SDP, Session}
 
   @impl true
   def init(_args) do
@@ -76,8 +76,8 @@ defmodule ExKamailio.WebSocket do
       }
 
       with {:ok, _pid} <-
-             Handler.Server.start_call(call_id, state.handler_mod, state.handler_opts),
-           {:ok, wire_sdp} <- Handler.Server.call_offer(call_id, session) do
+             CallHandler.Server.start_call(call_id, state.handler_mod, state.handler_opts),
+           {:ok, wire_sdp} <- CallHandler.Server.call_offer(call_id, session) do
         push(cookie, %{result: "ok", sdp: wire_sdp}, state)
       else
         {:error, reason} ->
@@ -94,7 +94,7 @@ defmodule ExKamailio.WebSocket do
         from_answerer_sdp: answer_sdp
       }
 
-      case Handler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do
+      case CallHandler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do
         {:ok, wire_sdp} ->
           push(cookie, %{result: "ok", sdp: wire_sdp}, state)
 
@@ -110,7 +110,7 @@ defmodule ExKamailio.WebSocket do
   end
 
   defp dispatch("delete", cookie, cmd, state) do
-    case Handler.Server.call_delete(fetch_id(cmd, "call-id")) do
+    case CallHandler.Server.call_delete(fetch_id(cmd, "call-id")) do
       :ok ->
         push(cookie, %{result: "ok"}, state)
 

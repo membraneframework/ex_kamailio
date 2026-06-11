@@ -5,7 +5,7 @@ defmodule ExKamailio.WebSocketTest do
   alias ExKamailio.{SDP, WebSocket}
 
   defmodule TestHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
 
@@ -184,7 +184,7 @@ defmodule ExKamailio.WebSocketTest do
   end
 
   defmodule MarkingHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
 
@@ -248,7 +248,7 @@ defmodule ExKamailio.WebSocketTest do
   end
 
   defmodule CrashingHandler do
-    use ExKamailio.Handler
+    use ExKamailio.CallHandler
 
     @impl true
     def handle_offer(_sdp, _s, _st), do: raise("boom")

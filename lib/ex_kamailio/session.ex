@@ -1,6 +1,6 @@
 defmodule ExKamailio.Session do
   @moduledoc """
-  State of a single call, threaded through `ExKamailio.Handler` callbacks:
+  State of a single call, threaded through `ExKamailio.CallHandler` callbacks:
   the SIP identifiers plus every SDP that crossed the wire, in both
   directions. Each field is nil until the call reaches that point.
 

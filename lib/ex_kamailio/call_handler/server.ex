@@ -1,4 +1,4 @@
-defmodule ExKamailio.Handler.Server do
+defmodule ExKamailio.CallHandler.Server do
   @moduledoc """
   One process per call: runs the user handler's callbacks and holds that call's
   `%ExKamailio.Session{}` (including the handler's own state) in its memory.
@@ -42,7 +42,7 @@ defmodule ExKamailio.Handler.Server do
   def call_delete(call_id), do: request(call_id, {__MODULE__, :delete})
 
   # The timeout must stay under Kamailio's rtpengine_tout_ms (default 1000 ms)
-  # — see "Callback latency budget" in ExKamailio.Handler.
+  # — see "Callback latency budget" in ExKamailio.CallHandler.
   defp request(call_id, request) do
     timeout = Application.get_env(:ex_kamailio, :handler_timeout, 800)
     GenServer.call(via(call_id), request, timeout)
