@@ -2,8 +2,8 @@ defmodule ExKamailio.CallHandler.ServerTest do
   use ExUnit.Case, async: false
   @moduletag :capture_log
 
-  alias ExKamailio.Session
   alias ExKamailio.CallHandler
+  alias ExKamailio.Session
 
   defmodule ApiHandler do
     use ExKamailio.CallHandler
@@ -98,10 +98,13 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   setup do
-    start_supervised!({Registry, keys: :unique, name: ExKamailio.CallRegistry})
+    start_supervised!(
+      {Registry, keys: :unique, name: ExKamailio.ConstantsAndVariables.call_registry()}
+    )
 
     start_supervised!(
-      {DynamicSupervisor, name: ExKamailio.CallSupervisor, strategy: :one_for_one}
+      {DynamicSupervisor,
+       name: ExKamailio.ConstantsAndVariables.call_supervisor(), strategy: :one_for_one}
     )
 
     :ok
@@ -115,7 +118,8 @@ defmodule ExKamailio.CallHandler.ServerTest do
     %{to_tag: to_tag, from_answerer_sdp: nil}
   end
 
-  defp registered?(call_id), do: Registry.lookup(ExKamailio.CallRegistry, call_id) != []
+  defp registered?(call_id),
+    do: Registry.lookup(ExKamailio.ConstantsAndVariables.call_registry(), call_id) != []
 
   # Registry unregisters on its own receipt of the call process's :DOWN, which
   # lags GenServer.call returning — poll rather than assume it's immediate.

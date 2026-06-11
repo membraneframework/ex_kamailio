@@ -17,16 +17,11 @@ defmodule ExKamailio.WebSocket do
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{CallHandler, SDP, Session}
+  alias ExKamailio.{CallHandler, ConstantsAndVariables, SDP, Session}
 
   @impl true
   def init(_args) do
-    {handler_mod, handler_opts} =
-      case Application.fetch_env!(:ex_kamailio, :call_handler) do
-        {mod, opts} -> {mod, opts}
-        mod when is_atom(mod) -> {mod, []}
-      end
-
+    {handler_mod, handler_opts} = ConstantsAndVariables.call_handler()
     {:ok, %{handler_mod: handler_mod, handler_opts: handler_opts}}
   end
 

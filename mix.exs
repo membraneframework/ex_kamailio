@@ -33,7 +33,8 @@ defmodule ExKamailio.MixProject do
       {:websock_adapter, "~> 0.5.8"},
       {:bento, "~> 1.0"},
       {:plug, "~> 1.18"},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 

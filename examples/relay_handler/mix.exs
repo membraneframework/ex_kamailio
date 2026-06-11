@@ -31,7 +31,8 @@ defmodule RelayHandler.MixProject do
       {:membrane_wav_plugin, "~> 0.10.2"},
       # WebSocket client used by the `mix kamailio.smoke` task to fake-drive
       # ex_kamailio over the loopback, no real Kamailio required.
-      {:mint_web_socket, "~> 1.0", only: [:dev, :test], runtime: false}
+      {:mint_web_socket, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end

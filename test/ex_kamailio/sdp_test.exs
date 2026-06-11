@@ -52,5 +52,4 @@ defmodule ExKamailio.SDPTest do
       assert body =~ "m=audio 5000"
     end
   end
-
 end

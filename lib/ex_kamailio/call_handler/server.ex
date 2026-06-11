@@ -12,8 +12,7 @@ defmodule ExKamailio.CallHandler.Server do
   use GenServer
   require Logger
 
-  @registry ExKamailio.CallRegistry
-  @supervisor ExKamailio.CallSupervisor
+  alias ExKamailio.ConstantsAndVariables
 
   # -- public API (used by ExKamailio.WebSocket) --
 
@@ -26,7 +25,7 @@ defmodule ExKamailio.CallHandler.Server do
       restart: :temporary
     }
 
-    case DynamicSupervisor.start_child(@supervisor, spec) do
+    case DynamicSupervisor.start_child(ConstantsAndVariables.call_supervisor(), spec) do
       {:error, {:already_started, pid}} -> {:ok, pid}
       other -> other
     end
@@ -36,16 +35,14 @@ defmodule ExKamailio.CallHandler.Server do
   def call_offer(call_id, session), do: request(call_id, {__MODULE__, :offer, session})
 
   @spec call_answer(String.t(), map()) :: {:ok, binary()} | {:error, term()}
-  def call_answer(call_id, answer_fields), do: request(call_id, {__MODULE__, :answer, answer_fields})
+  def call_answer(call_id, answer_fields),
+    do: request(call_id, {__MODULE__, :answer, answer_fields})
 
   @spec call_delete(String.t()) :: :ok | {:error, term()}
   def call_delete(call_id), do: request(call_id, {__MODULE__, :delete})
 
-  # The timeout must stay under Kamailio's rtpengine_tout_ms (default 1000 ms)
-  # — see "Callback latency budget" in ExKamailio.CallHandler.
   defp request(call_id, request) do
-    timeout = Application.get_env(:ex_kamailio, :rtpengine_command_timeout, 800)
-    GenServer.call(via(call_id), request, timeout)
+    GenServer.call(via(call_id), request, ConstantsAndVariables.rtpengine_command_timeout())
   catch
     :exit, {:timeout, _} ->
       GenServer.cast(via(call_id), {__MODULE__, :abort})
@@ -62,7 +59,7 @@ defmodule ExKamailio.CallHandler.Server do
     GenServer.start_link(__MODULE__, arg, name: via(call_id))
   end
 
-  defp via(call_id), do: {:via, Registry, {@registry, call_id}}
+  defp via(call_id), do: {:via, Registry, {ConstantsAndVariables.call_registry(), call_id}}
 
   # -- GenServer --
 
@@ -77,7 +74,7 @@ defmodule ExKamailio.CallHandler.Server do
       session: nil,
       to_answerer_sdp_string: nil,
       to_offerer_sdp_string: nil,
-      timeout: Application.get_env(:ex_kamailio, :call_timeout, :timer.minutes(30)),
+      timeout: ConstantsAndVariables.call_timeout(),
       timer_ref: nil
     }
 

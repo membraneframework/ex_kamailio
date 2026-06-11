@@ -16,14 +16,12 @@ defmodule ExKamailio.SDP do
   def parse(nil), do: {:error, :no_sdp}
 
   def parse(text) when is_binary(text) do
-    try do
-      case ExSDP.parse(text) do
-        {:ok, sdp} -> {:ok, sdp}
-        {:error, error} -> {:error, error}
-      end
-    rescue
-      error -> {:error, error}
+    case ExSDP.parse(text) do
+      {:ok, sdp} -> {:ok, sdp}
+      {:error, error} -> {:error, error}
     end
+  rescue
+    error -> {:error, error}
   end
 
   @doc """
@@ -71,5 +69,4 @@ defmodule ExKamailio.SDP do
       {:error, _} -> {:IP4, ip}
     end
   end
-
 end

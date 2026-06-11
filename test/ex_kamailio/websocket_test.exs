@@ -44,17 +44,21 @@ defmodule ExKamailio.WebSocketTest do
   setup do
     Application.put_env(:ex_kamailio, :call_handler, {TestHandler, report_to: self()})
 
-    start_supervised!({Registry, keys: :unique, name: ExKamailio.CallRegistry})
+    start_supervised!(
+      {Registry, keys: :unique, name: ExKamailio.ConstantsAndVariables.call_registry()}
+    )
 
     start_supervised!(
-      {DynamicSupervisor, name: ExKamailio.CallSupervisor, strategy: :one_for_one}
+      {DynamicSupervisor,
+       name: ExKamailio.ConstantsAndVariables.call_supervisor(), strategy: :one_for_one}
     )
 
     {:ok, state} = WebSocket.init([])
     {:ok, state: state}
   end
 
-  defp registered?(call_id), do: Registry.lookup(ExKamailio.CallRegistry, call_id) != []
+  defp registered?(call_id),
+    do: Registry.lookup(ExKamailio.ConstantsAndVariables.call_registry(), call_id) != []
 
   # Registry unregisters on its own receipt of the call process's :DOWN, which
   # lags the command reply — poll rather than assume it's immediate.
