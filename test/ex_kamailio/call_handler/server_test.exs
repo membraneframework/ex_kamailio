@@ -224,9 +224,9 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "an offer that misses the reply deadline errors in time, then the call tears down" do
-    prev = Application.get_env(:ex_kamailio, :handler_timeout)
-    Application.put_env(:ex_kamailio, :handler_timeout, 50)
-    on_exit(fn -> Application.put_env(:ex_kamailio, :handler_timeout, prev) end)
+    prev = Application.get_env(:ex_kamailio, :rtpengine_command_timeout)
+    Application.put_env(:ex_kamailio, :rtpengine_command_timeout, 50)
+    on_exit(fn -> Application.put_env(:ex_kamailio, :rtpengine_command_timeout, prev) end)
 
     {:ok, pid} = CallHandler.Server.start_call("c8", SlowHandler, report_to: self())
     ref = Process.monitor(pid)

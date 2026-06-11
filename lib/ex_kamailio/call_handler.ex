@@ -27,9 +27,10 @@ defmodule ExKamailio.CallHandler do
   `c:handle_offer/3` and `c:handle_answer/3`. Using `@behaviour ExKamailio.CallHandler` directly
   works too — then you must define all non-optional callbacks.
 
-  Register your handler module in config:
+  Register your handler module in config — bare, or as `{module, opts}` to
+  pass options to `c:init/1`:
 
-      config :ex_kamailio, handler: MyApp.KamailioHandler
+      config :ex_kamailio, call_handler: MyApp.KamailioHandler
 
   ## State is per call
 
@@ -53,14 +54,19 @@ defmodule ExKamailio.CallHandler do
   The message is delivered alongside the call's `session` and state. Without it,
   a stray message crashes the call process (`UndefinedFunctionError`).
 
-  ## Idle timeout
+  ## Call timeout
 
   If a call never receives a Kamailio `delete` (dropped signaling), its process
-  would otherwise live forever. Each call arms an idle timer — `:call_timeout`
-  in config, default 30 minutes, reset on `offer`/`answer`. On expiry the
-  library calls `c:handle_timeout/2`; the `use` default tears the call down
-  (runs `c:handle_delete/2`, then stops). Override it to extend the call
-  (`{:noreply, state}`) or to clean up differently before stopping.
+  would otherwise live forever. Each call arms a timer — `:call_timeout` in
+  config, default 30 minutes, reset on `offer`/`answer`. On expiry the library
+  calls `c:handle_timeout/2`; the `use` default tears the call down (runs
+  `c:handle_delete/2`, then stops).
+
+  The timer counts signaling, not media: no command arrives between the answer
+  and the hangup, so a call outliving `:call_timeout` hits it with media still
+  flowing. ex_kamailio never sees the RTP — only your handler can tell an
+  abandoned call from a long one. Override `c:handle_timeout/2` to check and
+  extend (`{:noreply, state}`).
 
   ## Call flow
 
@@ -106,11 +112,11 @@ defmodule ExKamailio.CallHandler do
   1000 ms). Missing that deadline does more than fail the one command:
   Kamailio marks the node disabled for `rtpengine_disable_tout` (default
   60 s), failing every call's commands meanwhile. ex_kamailio therefore
-  waits at most `:handler_timeout` (config, default 800 ms) for a
+  waits at most `:rtpengine_command_timeout` (config, default 800 ms) for a
   callback, then replies with an in-time error — that call fails (the
   call process is told to tear down; `c:handle_delete/2` still runs) but
   the node stays up. Keep slow work (transcoder warm-up, external
-  lookups) out of these callbacks; if you must raise `:handler_timeout`,
+  lookups) out of these callbacks; if you must raise `:rtpengine_command_timeout`,
   raise Kamailio's `rtpengine_tout_ms` with it.
   """
 

@@ -42,8 +42,7 @@ defmodule ExKamailio.WebSocketTest do
   """
 
   setup do
-    Application.put_env(:ex_kamailio, :handler, TestHandler)
-    Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
+    Application.put_env(:ex_kamailio, :call_handler, {TestHandler, report_to: self()})
 
     start_supervised!({Registry, keys: :unique, name: ExKamailio.CallRegistry})
 
@@ -209,8 +208,7 @@ defmodule ExKamailio.WebSocketTest do
 
   describe "per-call state" do
     test "interleaved calls keep independent state" do
-      Application.put_env(:ex_kamailio, :handler, MarkingHandler)
-      Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
+      Application.put_env(:ex_kamailio, :call_handler, {MarkingHandler, report_to: self()})
       {:ok, state} = WebSocket.init([])
 
       offer = fn cid, ftag ->
@@ -229,8 +227,7 @@ defmodule ExKamailio.WebSocketTest do
     end
 
     test "a call survives across pooled connections (offer and delete on different WS)" do
-      Application.put_env(:ex_kamailio, :handler, MarkingHandler)
-      Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
+      Application.put_env(:ex_kamailio, :call_handler, {MarkingHandler, report_to: self()})
 
       {:ok, conn_a} = WebSocket.init([])
       {:ok, conn_b} = WebSocket.init([])
@@ -259,7 +256,7 @@ defmodule ExKamailio.WebSocketTest do
 
   describe "handler crash" do
     test "a raising offer becomes an error reply, not a WS process crash" do
-      Application.put_env(:ex_kamailio, :handler, CrashingHandler)
+      Application.put_env(:ex_kamailio, :call_handler, CrashingHandler)
       {:ok, state} = WebSocket.init([])
 
       msg =

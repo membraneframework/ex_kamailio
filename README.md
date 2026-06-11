@@ -42,8 +42,9 @@ config :ex_kamailio,
   # rtpengine WebSocket connection.
   ws_port: 4003,
 
-  # Your handler module — implements `ExKamailio.CallHandler`.
-  handler: MyApp.KamailioHandler
+  # Your handler module — implements `ExKamailio.CallHandler`. Use
+  # {module, opts} to pass options to its init/1.
+  call_handler: MyApp.KamailioHandler
 ```
 
 ex_kamailio is a pure SDP shuttle: it owns no media ports and picks no

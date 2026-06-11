@@ -44,7 +44,7 @@ defmodule ExKamailio.CallHandler.Server do
   # The timeout must stay under Kamailio's rtpengine_tout_ms (default 1000 ms)
   # — see "Callback latency budget" in ExKamailio.CallHandler.
   defp request(call_id, request) do
-    timeout = Application.get_env(:ex_kamailio, :handler_timeout, 800)
+    timeout = Application.get_env(:ex_kamailio, :rtpengine_command_timeout, 800)
     GenServer.call(via(call_id), request, timeout)
   catch
     :exit, {:timeout, _} ->

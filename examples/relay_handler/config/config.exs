@@ -2,7 +2,7 @@ import Config
 
 config :ex_kamailio,
   ws_port: 4003,
-  handler: RelayHandler
+  call_handler: RelayHandler
 
 # The handler owns the media; these are the example's, not the library's.
 # MEDIA_IP=auto (the default) advertises this host's first non-loopback IPv4 in

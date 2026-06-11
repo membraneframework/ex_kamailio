@@ -21,12 +21,13 @@ defmodule ExKamailio.WebSocket do
 
   @impl true
   def init(_args) do
-    state = %{
-      handler_mod: Application.fetch_env!(:ex_kamailio, :handler),
-      handler_opts: Application.get_env(:ex_kamailio, :handler_opts, [])
-    }
+    {handler_mod, handler_opts} =
+      case Application.fetch_env!(:ex_kamailio, :call_handler) do
+        {mod, opts} -> {mod, opts}
+        mod when is_atom(mod) -> {mod, []}
+      end
 
-    {:ok, state}
+    {:ok, %{handler_mod: handler_mod, handler_opts: handler_opts}}
   end
 
   @impl true
