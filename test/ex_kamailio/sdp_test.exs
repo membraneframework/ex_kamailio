@@ -53,11 +53,4 @@ defmodule ExKamailio.SDPTest do
     end
   end
 
-  describe "first_audio_endpoint/1" do
-    test "extracts IP and port from the first audio m-line" do
-      {:ok, sdp} = SDP.parse(@offer)
-      assert %Endpoint{ip: ip, rtp_port: 49_170} = SDP.first_audio_endpoint(sdp)
-      assert ip == {192, 168, 1, 10}
-    end
-  end
 end

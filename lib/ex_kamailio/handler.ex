@@ -15,16 +15,16 @@ defmodule ExKamailio.Handler do
         use ExKamailio.Handler
 
         @impl true
-        def handle_offer(session, state), do: {:ok, reply_sdp, state}
+        def handle_offer(offer, session, state), do: {:ok, reply_sdp, state}
 
         @impl true
-        def handle_answer(session, state), do: {:ok, reply_sdp, state}
+        def handle_answer(answer, session, state), do: {:ok, reply_sdp, state}
       end
 
   `use ExKamailio.Handler` declares the behaviour and provides overridable
   defaults for `c:init/1` (`{:ok, %{}}`), `c:handle_delete/2` (no-op) and
   `c:handle_timeout/2` (tear the call down), so a handler only has to define
-  `c:handle_offer/2` and `c:handle_answer/2`. Using `@behaviour ExKamailio.Handler` directly
+  `c:handle_offer/3` and `c:handle_answer/3`. Using `@behaviour ExKamailio.Handler` directly
   works too — then you must define all non-optional callbacks.
 
   Register your handler module in config:
@@ -67,8 +67,8 @@ defmodule ExKamailio.Handler do
   Kamailio relays each SDP exchange of a call as an rtpengine command, in a
   fixed order: `offer`, then `answer` (either may be retransmitted), then
   `delete`. An `answer` for a call that was never offered is rejected without
-  reaching your handler, so `c:handle_offer/2` always runs before
-  `c:handle_answer/2`.
+  reaching your handler, so `c:handle_offer/3` always runs before
+  `c:handle_answer/3`.
 
   The peers are named by their RFC 3264 roles: the **offerer** proposes SDP,
   the **answerer** responds. In the initial `INVITE` — the only exchange
@@ -77,22 +77,23 @@ defmodule ExKamailio.Handler do
   peer may offer.
 
   1. `c:init/1` seeds the state for the call.
-  2. `c:handle_offer/2` — the offerer's `INVITE` arrived; its SDP offer is in
-     `session.offer_sdp` (media address parsed into `session.offerer_remote`).
-     Bind a media socket and return SDP advertising it: that SDP becomes the
-     *offer* the **answerer** sees in the forwarded `INVITE`. Nothing is sent
-     to the offerer at this stage.
-  3. `c:handle_answer/2` — the answerer accepted; its SDP answer is in
-     `session.answer_sdp` (`session.answerer_remote`). Return SDP advertising
-     your socket for the other direction: that SDP becomes the *answer* the
-     **offerer** receives in the forwarded `200 OK`, completing the exchange.
+  2. `c:handle_offer/3` — the offerer's `INVITE` arrived; its parsed SDP offer
+     is the first argument. Bind a media socket and return SDP advertising it:
+     that SDP becomes the *offer* the **answerer** sees in the forwarded
+     `INVITE`. Nothing is sent to the offerer at this stage.
+  3. `c:handle_answer/3` — the answerer accepted; its parsed SDP answer is the
+     first argument. Return SDP advertising your socket for the other
+     direction: that SDP becomes the *answer* the **offerer** receives in the
+     forwarded `200 OK`, completing the exchange.
   4. `c:handle_delete/2` — Kamailio tears the call down (`BYE`/`CANCEL`); the
      call's state is dropped afterwards. Release whatever you allocated.
 
   Media-wise, each peer ends up negotiating with you: the offerer's offer is
-  answered by the SDP you return from `c:handle_answer/2`, and the offer the
-  answerer responds to is the one you returned from `c:handle_offer/2`.
-  ex_kamailio never forwards one peer's SDP to the other on its own.
+  answered by the SDP you return from `c:handle_answer/3`, and the offer the
+  answerer responds to is the one you returned from `c:handle_offer/3`.
+  ex_kamailio never forwards one peer's SDP to the other on its own. The
+  `%ExKamailio.Session{}` passed to every callback keeps the full record —
+  all four SDPs, as far as the call has got.
 
   Callbacks have no error return — to reject a command, raise. The crash
   is contained to that call's process: ex_kamailio replies to Kamailio
@@ -138,18 +139,13 @@ defmodule ExKamailio.Handler do
 
   @type state :: term()
 
-  @typedoc """
-  The SDP a callback returns. An `%ExSDP{}` struct is canonical (build it from
-  `session.offer_sdp`/`answer_sdp` with `ExKamailio.SDP.rewrite_endpoint/2`);
-  a raw string is also accepted for log-only or hand-rolled handlers.
-  """
-  @type sdp :: ExSDP.t() | String.t()
-
   @callback init(opts :: keyword()) :: {:ok, state()}
 
-  @callback handle_offer(Session.t(), state()) :: {:ok, sdp(), state()}
+  @callback handle_offer(offer :: ExSDP.t(), Session.t(), state()) ::
+              {:ok, reply :: ExSDP.t(), state()}
 
-  @callback handle_answer(Session.t(), state()) :: {:ok, sdp(), state()}
+  @callback handle_answer(answer :: ExSDP.t(), Session.t(), state()) ::
+              {:ok, reply :: ExSDP.t(), state()}
 
   @callback handle_info(message :: term(), Session.t(), state()) :: {:ok, state()}
 

@@ -7,10 +7,10 @@ defmodule RelayHandler do
   codecs. This handler is what binds sockets, picks ports and runs the media —
   and it builds the relay one leg at a time, in step with the dialog:
 
-    * `handle_offer/2`  — pick the local port the *answerer* will send to, start
+    * `handle_offer/3`  — pick the local port the *answerer* will send to, start
       the pipeline with the answerer→offerer leg (bound to that port, forwarding
       to the offerer), and advertise it in the reply SDP.
-    * `handle_answer/2` — pick the local port the *offerer* will send to, add
+    * `handle_answer/3` — pick the local port the *offerer* will send to, add
       the offerer→answerer leg to the running pipeline, and advertise it.
     * `handle_delete/2` — terminate the pipeline.
 
@@ -31,17 +31,18 @@ defmodule RelayHandler do
   end
 
   @impl true
-  def handle_offer(session, state) do
+  def handle_offer(offer, session, state) do
     # This port goes into the rewritten INVITE — the port the *answerer* sends
     # to. Start the answerer→offerer leg now; media flows once the peer answers.
+    remote = remote_endpoint(offer)
     local = checkout(state.media_ip, {session.call_id, :offerer})
 
     Logger.info(
-      "[relay] offer call=#{session.call_id} offerer remote=#{inspect(session.offerer_remote)} " <>
+      "[relay] offer call=#{session.call_id} offerer remote=#{inspect(remote)} " <>
         "advertising local=#{inspect(local)}"
     )
 
-    case start_pipeline(session.call_id, local.rtp_port, session.offerer_remote) do
+    case start_pipeline(session.call_id, local.rtp_port, remote) do
       {:ok, pid} ->
         {:ok, pcmu_sdp(local), %{state | pipeline: pid, offerer_local: local}}
 
@@ -52,17 +53,18 @@ defmodule RelayHandler do
   end
 
   @impl true
-  def handle_answer(session, state) do
+  def handle_answer(answer, session, state) do
     # This port goes back to the offerer in 200 OK — the port the *offerer*
     # sends to. Add the offerer→answerer leg: listen on it, forward onwards.
+    remote = remote_endpoint(answer)
     local = checkout(state.media_ip, {session.call_id, :answerer})
 
     Logger.info(
-      "[relay] answer call=#{session.call_id} answerer remote=#{inspect(session.answerer_remote)} " <>
+      "[relay] answer call=#{session.call_id} answerer remote=#{inspect(remote)} " <>
         "advertising local=#{inspect(local)}"
     )
 
-    send(state.pipeline, {:add_leg, local.rtp_port, session.answerer_remote})
+    send(state.pipeline, {:add_leg, local.rtp_port, remote})
     {:ok, pcmu_sdp(local), %{state | answerer_local: local}}
   end
 
@@ -93,6 +95,14 @@ defmodule RelayHandler do
     ]
     |> Enum.join("\r\n")
     |> Kernel.<>("\r\n")
+    |> ExSDP.parse!()
+  end
+
+  # Where to send RTP: address + port of the first live audio m-line.
+  defp remote_endpoint(sdp) do
+    media = Enum.find(sdp.media, &(&1.type == :audio and &1.port > 0))
+    [%ExSDP.ConnectionData{address: ip} | _] = List.wrap(media.connection_data)
+    %Endpoint{ip: ip, rtp_port: media.port}
   end
 
   defp checkout(media_ip, key) do

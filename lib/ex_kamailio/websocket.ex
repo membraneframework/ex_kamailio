@@ -72,9 +72,7 @@ defmodule ExKamailio.WebSocket do
       session = %Session{
         call_id: call_id,
         from_tag: fetch_id(cmd, "from-tag"),
-        state: :offered,
-        offerer_remote: SDP.first_audio_endpoint(offer_sdp),
-        offer_sdp: offer_sdp
+        from_offerer_sdp: offer_sdp
       }
 
       with {:ok, _pid} <-
@@ -93,8 +91,7 @@ defmodule ExKamailio.WebSocket do
     with_sdp(cookie, cmd, state, fn answer_sdp ->
       fields = %{
         to_tag: fetch_id(cmd, "to-tag"),
-        answer_sdp: answer_sdp,
-        answerer_remote: SDP.first_audio_endpoint(answer_sdp)
+        from_answerer_sdp: answer_sdp
       }
 
       case Handler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do

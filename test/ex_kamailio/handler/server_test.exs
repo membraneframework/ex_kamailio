@@ -12,15 +12,15 @@ defmodule ExKamailio.Handler.ServerTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
-    def handle_offer(session, st) do
+    def handle_offer(_offer, session, st) do
       send(st.report_to, {:offer, session.call_id})
-      {:ok, "offer-sdp", st}
+      {:ok, ExSDP.new(), st}
     end
 
     @impl true
-    def handle_answer(session, st) do
+    def handle_answer(_answer, session, st) do
       send(st.report_to, {:answer, session.call_id, session.to_tag})
-      {:ok, "answer-sdp", st}
+      {:ok, ExSDP.new(), st}
     end
 
     @impl true
@@ -40,10 +40,10 @@ defmodule ExKamailio.Handler.ServerTest do
     use ExKamailio.Handler
 
     @impl true
-    def handle_offer(_session, st), do: {:ok, "offer-sdp", st}
+    def handle_offer(_offer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
-    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
   end
 
   defmodule ExtendHandler do
@@ -53,10 +53,10 @@ defmodule ExKamailio.Handler.ServerTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
-    def handle_offer(_session, st), do: {:ok, "offer-sdp", st}
+    def handle_offer(_offer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
-    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
     def handle_timeout(session, st) do
@@ -72,13 +72,13 @@ defmodule ExKamailio.Handler.ServerTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
-    def handle_offer(_session, st) do
+    def handle_offer(_offer, _session, st) do
       Process.sleep(200)
-      {:ok, "offer-sdp", st}
+      {:ok, ExSDP.new(), st}
     end
 
     @impl true
-    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
     def handle_delete(session, st) do
@@ -91,10 +91,10 @@ defmodule ExKamailio.Handler.ServerTest do
     use ExKamailio.Handler
 
     @impl true
-    def handle_offer(_session, _st), do: raise("boom")
+    def handle_offer(_offer, _session, _st), do: raise("boom")
 
     @impl true
-    def handle_answer(_session, st), do: {:ok, "answer-sdp", st}
+    def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
   end
 
   setup do
@@ -108,11 +108,11 @@ defmodule ExKamailio.Handler.ServerTest do
   end
 
   defp offer_session(call_id) do
-    %Session{call_id: call_id, from_tag: "f-#{call_id}", state: :offered}
+    %Session{call_id: call_id, from_tag: "f-#{call_id}"}
   end
 
   defp answer_fields(to_tag) do
-    %{to_tag: to_tag, answer_sdp: nil, answerer_remote: nil}
+    %{to_tag: to_tag, from_answerer_sdp: nil}
   end
 
   defp registered?(call_id), do: Registry.lookup(ExKamailio.CallRegistry, call_id) != []
@@ -130,10 +130,12 @@ defmodule ExKamailio.Handler.ServerTest do
   test "offer/answer/delete round trip threads through one process" do
     {:ok, _} = Handler.Server.start_call("c1", ApiHandler, report_to: self())
 
-    assert {:ok, "offer-sdp"} = Handler.Server.call_offer("c1", offer_session("c1"))
+    assert {:ok, offer_reply} = Handler.Server.call_offer("c1", offer_session("c1"))
+    assert is_binary(offer_reply)
     assert_receive {:offer, "c1"}
 
-    assert {:ok, "answer-sdp"} = Handler.Server.call_answer("c1", answer_fields("t1"))
+    assert {:ok, answer_reply} = Handler.Server.call_answer("c1", answer_fields("t1"))
+    assert is_binary(answer_reply)
     assert_receive {:answer, "c1", "t1"}
 
     assert :ok = Handler.Server.call_delete("c1")
@@ -141,14 +143,24 @@ defmodule ExKamailio.Handler.ServerTest do
     assert eventually_unregistered("c1")
   end
 
+  test "a retransmitted offer replays the cached reply without re-invoking the handler" do
+    {:ok, _} = Handler.Server.start_call("c2a", ApiHandler, report_to: self())
+
+    assert {:ok, reply} = Handler.Server.call_offer("c2a", offer_session("c2a"))
+    assert_receive {:offer, "c2a"}
+
+    assert {:ok, ^reply} = Handler.Server.call_offer("c2a", offer_session("c2a"))
+    refute_receive {:offer, "c2a"}
+  end
+
   test "a retransmitted answer replays the cached reply without re-invoking the handler" do
     {:ok, _} = Handler.Server.start_call("c2", ApiHandler, report_to: self())
     {:ok, _} = Handler.Server.call_offer("c2", offer_session("c2"))
 
-    assert {:ok, "answer-sdp"} = Handler.Server.call_answer("c2", answer_fields("t1"))
+    assert {:ok, reply} = Handler.Server.call_answer("c2", answer_fields("t1"))
     assert_receive {:answer, "c2", "t1"}
 
-    assert {:ok, "answer-sdp"} = Handler.Server.call_answer("c2", answer_fields("t1"))
+    assert {:ok, ^reply} = Handler.Server.call_answer("c2", answer_fields("t1"))
     refute_receive {:answer, "c2", "t1"}
   end
 
@@ -220,7 +232,6 @@ defmodule ExKamailio.Handler.ServerTest do
     ref = Process.monitor(pid)
 
     assert {:error, :timeout} = Handler.Server.call_offer("c8", offer_session("c8"))
-    # The abort queues behind the slow callback: delete runs once it returns.
     assert_receive {:delete, "c8"}, 500
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
     assert eventually_unregistered("c8")

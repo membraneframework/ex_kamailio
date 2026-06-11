@@ -1,49 +1,35 @@
 defmodule ExKamailio.Session do
   @moduledoc """
-  State of a single call, threaded through `ExKamailio.Handler` callbacks.
+  State of a single call, threaded through `ExKamailio.Handler` callbacks:
+  the SIP identifiers plus every SDP that crossed the wire, in both
+  directions. Each field is nil until the call reaches that point.
 
   - `call_id` / `from_tag` / `to_tag` — SIP identifiers forwarded by Kamailio.
-  - `state` — lifecycle state: `:offered` after the offer has been processed,
-    `:answered` once the answer has come back.
-  - `offerer_remote` / `answerer_remote` — endpoints parsed from the offer and
-    the answer SDP respectively, for the handler's convenience. May still be
-    behind NAT; symmetric-RTP latching happens at the media layer.
-  - `offer_sdp` / `answer_sdp` — parsed `%ExSDP{}` structs from each party.
-  - `answer_reply_sdp` — the SDP text we sent back to Kamailio on the first
-    answer. Cached so retransmitted answer commands can be served
-    idempotently without re-invoking the handler.
-  - `handler_state` — the user handler's per-call state, held by the call's own
-    process (`ExKamailio.Handler.Server`).
+  - `from_offerer_sdp` / `from_answerer_sdp` — `%ExSDP{}` received from that
+    peer.
+  - `to_answerer_sdp` / `to_offerer_sdp` — `%ExSDP{}` the handler returned,
+    forwarded by Kamailio to that peer.
   """
 
-  alias ExKamailio.Endpoint
-
   @type call_id :: String.t()
-  @type lifecycle :: :offered | :answered
 
   @type t :: %__MODULE__{
           call_id: call_id(),
           from_tag: String.t() | nil,
           to_tag: String.t() | nil,
-          state: lifecycle(),
-          offerer_remote: Endpoint.t() | nil,
-          answerer_remote: Endpoint.t() | nil,
-          offer_sdp: ExSDP.t() | nil,
-          answer_sdp: ExSDP.t() | nil,
-          answer_reply_sdp: String.t() | nil,
-          handler_state: term()
+          from_offerer_sdp: ExSDP.t() | nil,
+          to_answerer_sdp: ExSDP.t() | nil,
+          from_answerer_sdp: ExSDP.t() | nil,
+          to_offerer_sdp: ExSDP.t() | nil
         }
 
   defstruct [
     :call_id,
     :from_tag,
     :to_tag,
-    :state,
-    :offerer_remote,
-    :answerer_remote,
-    :offer_sdp,
-    :answer_sdp,
-    :answer_reply_sdp,
-    :handler_state
+    :from_offerer_sdp,
+    :to_answerer_sdp,
+    :from_answerer_sdp,
+    :to_offerer_sdp
   ]
 end

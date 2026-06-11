@@ -13,15 +13,15 @@ defmodule ExKamailio.WebSocketTest do
     def init(opts), do: {:ok, %{calls: opts[:report_to] || self()}}
 
     @impl true
-    def handle_offer(session, state) do
+    def handle_offer(offer, session, state) do
       send(state.calls, {:offer_called, session})
-      {:ok, SDP.rewrite_endpoint(session.offer_sdp, @local), state}
+      {:ok, SDP.rewrite_endpoint(offer, @local), state}
     end
 
     @impl true
-    def handle_answer(session, state) do
+    def handle_answer(answer, session, state) do
       send(state.calls, {:answer_called, session})
-      {:ok, SDP.rewrite_endpoint(session.answer_sdp, @local), state}
+      {:ok, SDP.rewrite_endpoint(answer, @local), state}
     end
 
     @impl true
@@ -109,8 +109,7 @@ defmodule ExKamailio.WebSocketTest do
       assert_receive {:offer_called, session}
       assert session.call_id == "call-1"
       assert session.from_tag == "f1"
-      assert session.state == :offered
-      assert session.offerer_remote.rtp_port == 49_170
+      assert %ExSDP{} = session.from_offerer_sdp
     end
   end
 
@@ -155,8 +154,8 @@ defmodule ExKamailio.WebSocketTest do
       assert decode!(reply)["result"] == "ok"
       assert_receive {:offer_called, _}
       assert_receive {:answer_called, session}
-      assert session.state == :answered
       assert session.to_tag == "t1"
+      assert %ExSDP{} = session.to_answerer_sdp
     end
   end
 
@@ -193,14 +192,13 @@ defmodule ExKamailio.WebSocketTest do
     def init(opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
 
     @impl true
-    def handle_offer(session, state) do
-      reply = SDP.rewrite_endpoint(session.offer_sdp, @local)
-      {:ok, reply, %{state | mark: session.call_id}}
+    def handle_offer(offer, session, state) do
+      {:ok, SDP.rewrite_endpoint(offer, @local), %{state | mark: session.call_id}}
     end
 
     @impl true
-    def handle_answer(session, state),
-      do: {:ok, SDP.rewrite_endpoint(session.answer_sdp, @local), state}
+    def handle_answer(answer, _session, state),
+      do: {:ok, SDP.rewrite_endpoint(answer, @local), state}
 
     @impl true
     def handle_delete(session, state) do
@@ -231,8 +229,6 @@ defmodule ExKamailio.WebSocketTest do
     end
 
     test "a call survives across pooled connections (offer and delete on different WS)" do
-      # offer and delete arrive on different pooled connections; the call lives in
-      # its own process, found via the shared registry, so delete still reaches it.
       Application.put_env(:ex_kamailio, :handler, MarkingHandler)
       Application.put_env(:ex_kamailio, :handler_opts, report_to: self())
 
@@ -255,10 +251,10 @@ defmodule ExKamailio.WebSocketTest do
     use ExKamailio.Handler
 
     @impl true
-    def handle_offer(_s, _st), do: raise("boom")
+    def handle_offer(_sdp, _s, _st), do: raise("boom")
 
     @impl true
-    def handle_answer(_s, _st), do: raise("boom")
+    def handle_answer(_sdp, _s, _st), do: raise("boom")
   end
 
   describe "handler crash" do
@@ -274,8 +270,6 @@ defmodule ExKamailio.WebSocketTest do
           sdp: @offer_sdp
         })
 
-      # A normal {:push, ...} return (rather than a raised exception) proves the
-      # WS process survived; the reply is a clean rtpengine error.
       assert {:push, {:text, reply}, _state} =
                WebSocket.handle_in({msg, [opcode: :text]}, state)
 

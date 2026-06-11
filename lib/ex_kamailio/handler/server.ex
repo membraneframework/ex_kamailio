@@ -41,11 +41,8 @@ defmodule ExKamailio.Handler.Server do
   @spec call_delete(String.t()) :: :ok | {:error, term()}
   def call_delete(call_id), do: request(call_id, {__MODULE__, :delete})
 
-  # A dead/absent call process becomes {:error, ...} instead of taking the
-  # shared WebSocket caller down. The timeout must stay under Kamailio's
-  # rtpengine_tout_ms (default 1000 ms) — a missed deadline gets the node
-  # disabled for 60 s. The abort cast queues behind the slow callback, so the
-  # call still tears down (handle_delete included) once that callback returns.
+  # The timeout must stay under Kamailio's rtpengine_tout_ms (default 1000 ms)
+  # — see "Callback latency budget" in ExKamailio.Handler.
   defp request(call_id, request) do
     timeout = Application.get_env(:ex_kamailio, :handler_timeout, 800)
     GenServer.call(via(call_id), request, timeout)
@@ -78,6 +75,8 @@ defmodule ExKamailio.Handler.Server do
       impl: impl,
       inner_state: inner_state,
       session: nil,
+      to_answerer_sdp_string: nil,
+      to_offerer_sdp_string: nil,
       timeout: Application.get_env(:ex_kamailio, :call_timeout, :timer.minutes(30)),
       timer_ref: nil
     }
@@ -86,36 +85,46 @@ defmodule ExKamailio.Handler.Server do
   end
 
   @impl true
-  def handle_call({__MODULE__, :offer, session}, _from, state) do
-    {:ok, sdp, inner_state} = state.impl.handle_offer(session, state.inner_state)
-    state = arm_timer(%{state | session: session, inner_state: inner_state})
-    {:reply, {:ok, wire(sdp)}, state}
+  def handle_call({__MODULE__, :offer, _session}, _from, %{to_answerer_sdp_string: reply} = state)
+      when is_binary(reply) do
+    {:reply, {:ok, reply}, state}
   end
 
-  # Kamailio retransmits 200 OK; replay the cached reply instead of re-invoking
-  # the handler (which would spawn a second pipeline / re-bind ports).
+  def handle_call({__MODULE__, :offer, session}, _from, state) do
+    {:ok, %ExSDP{} = sdp, inner_state} =
+      state.impl.handle_offer(session.from_offerer_sdp, session, state.inner_state)
+
+    session = %{session | to_answerer_sdp: sdp}
+    reply = to_string(sdp)
+
+    state = %{state | session: session, inner_state: inner_state, to_answerer_sdp_string: reply}
+    {:reply, {:ok, reply}, arm_timer(state)}
+  end
+
   def handle_call(
         {__MODULE__, :answer, %{to_tag: to_tag}},
         _from,
-        %{session: %{state: :answered, to_tag: to_tag, answer_reply_sdp: reply_sdp}} = state
+        %{session: %{to_tag: to_tag}, to_offerer_sdp_string: reply} = state
       )
-      when is_binary(reply_sdp) do
-    {:reply, {:ok, reply_sdp}, state}
+      when is_binary(reply) do
+    {:reply, {:ok, reply}, state}
   end
 
-  def handle_call({__MODULE__, :answer, fields}, _from, %{session: %{state: :offered}} = state) do
-    session = %{
-      state.session
-      | state: :answered,
-        to_tag: fields.to_tag,
-        answerer_remote: fields.answerer_remote,
-        answer_sdp: fields.answer_sdp
-    }
+  def handle_call(
+        {__MODULE__, :answer, fields},
+        _from,
+        %{session: %{to_offerer_sdp: nil} = session} = state
+      ) do
+    session = %{session | to_tag: fields.to_tag, from_answerer_sdp: fields.from_answerer_sdp}
 
-    {:ok, sdp, inner_state} = state.impl.handle_answer(session, state.inner_state)
-    wire_sdp = wire(sdp)
-    session = %{session | answer_reply_sdp: wire_sdp}
-    {:reply, {:ok, wire_sdp}, arm_timer(%{state | session: session, inner_state: inner_state})}
+    {:ok, %ExSDP{} = sdp, inner_state} =
+      state.impl.handle_answer(session.from_answerer_sdp, session, state.inner_state)
+
+    session = %{session | to_offerer_sdp: sdp}
+    reply = to_string(sdp)
+
+    state = %{state | session: session, inner_state: inner_state, to_offerer_sdp_string: reply}
+    {:reply, {:ok, reply}, arm_timer(state)}
   end
 
   def handle_call({__MODULE__, :answer, _fields}, _from, state) do
@@ -166,7 +175,4 @@ defmodule ExKamailio.Handler.Server do
     if state.timer_ref, do: Process.cancel_timer(state.timer_ref)
     %{state | timer_ref: Process.send_after(self(), {__MODULE__, :call_timeout}, state.timeout)}
   end
-
-  defp wire(sdp) when is_binary(sdp), do: sdp
-  defp wire(%ExSDP{} = sdp), do: to_string(sdp)
 end

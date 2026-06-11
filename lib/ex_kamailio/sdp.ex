@@ -72,27 +72,4 @@ defmodule ExKamailio.SDP do
     end
   end
 
-  @doc """
-  Extract the first audio media endpoint (IP + port) from a parsed
-  SDP. Returns `nil` if the SDP has no audio media or no connection
-  data.
-  """
-  @spec first_audio_endpoint(ExSDP.t()) :: Endpoint.t() | nil
-  def first_audio_endpoint(%ExSDP{media: media}) do
-    Enum.find_value(media, fn
-      %ExSDP.Media{type: type, port: port, connection_data: cd} when type in [:audio, "audio"] ->
-        build_endpoint(port, cd)
-
-      _ ->
-        nil
-    end)
-  end
-
-  defp build_endpoint(port, %ExSDP.ConnectionData{address: ip}),
-    do: %Endpoint{ip: ip, rtp_port: port}
-
-  defp build_endpoint(port, [%ExSDP.ConnectionData{address: ip} | _]),
-    do: %Endpoint{ip: ip, rtp_port: port}
-
-  defp build_endpoint(_port, _), do: nil
 end
