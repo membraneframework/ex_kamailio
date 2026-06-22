@@ -58,27 +58,19 @@ relay_handler example auto-detects this host's first non-loopback IPv4.
 defmodule MyApp.KamailioHandler do
   use ExKamailio.CallHandler
 
-  alias ExKamailio.SDP
-
   @impl true
   def init(_opts), do: {:ok, %{pipeline: nil}}
 
   @impl true
   def handle_offer(offer, session, state) do
-    # You own the media: bind your own socket / start a pipeline leg, then
-    # advertise the endpoint you bound. `local` is an `%ExKamailio.Endpoint{}`
-    # (ip + rtp_port) you choose.
-    {:ok, local, pid} = MyApp.Media.open(session.call_id, offer)
-
-    # Forward the offerer's SDP, repointed at your local endpoint. The peer's
-    # codecs are preserved — ex_kamailio doesn't pick codecs for you.
-    {:ok, SDP.rewrite_endpoint(offer, local), %{state | pipeline: pid}}
+    {:ok, reply_sdp, pid} = MyApp.Media.open(session.call_id, offer)
+    {:ok, reply_sdp, %{state | pipeline: pid}}
   end
 
   @impl true
   def handle_answer(answer, _session, state) do
-    {:ok, local} = MyApp.Media.add_answerer(state.pipeline, answer)
-    {:ok, SDP.rewrite_endpoint(answer, local), state}
+    {:ok, reply_sdp} = MyApp.Media.add_answerer(state.pipeline, answer)
+    {:ok, reply_sdp, state}
   end
 
   @impl true
@@ -89,17 +81,15 @@ defmodule MyApp.KamailioHandler do
 end
 ```
 
-The library handles WebSocket plumbing, Bencode parsing, SDP parsing, and
-per-call session bookkeeping. Your handler owns the media — it binds its own
-sockets / allocates its own ports and decides what to do with the stream.
+The callbacks receive the peer's parsed offer/answer (`%ExSDP{}`) and return the
+`%ExSDP{}` to advertise back — pointed at the media socket your code bound. The
+library handles WebSocket plumbing, Bencode parsing, SDP parsing, and per-call
+session bookkeeping; your handler owns the media and the SDP it returns.
 
 `state` is kept **per call** (keyed by `session.call_id`): `init/1` seeds each
 new call, your callbacks receive and return that call's state, and it is dropped
 on `handle_delete/2` — so keeping a pipeline pid in a bare field, as above, is safe even
 with many overlapping calls.
-
-Callbacks return an `%ExSDP{}` struct — typically built with
-`SDP.rewrite_endpoint/2`.
 
 ## Call flow
 

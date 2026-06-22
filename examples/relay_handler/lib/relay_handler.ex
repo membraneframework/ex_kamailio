@@ -78,8 +78,7 @@ defmodule RelayHandler do
   end
 
   # Force PCMU on both legs so the per-call `.wav` recordings decode cleanly —
-  # the handler's choice, ex_kamailio stays codec-agnostic. Swap in
-  # `ExKamailio.SDP.rewrite_endpoint(peer_sdp, local)` to forward the codecs.
+  # the handler's choice, ex_kamailio stays codec-agnostic.
   defp pcmu_sdp(local) do
     [
       "v=0",

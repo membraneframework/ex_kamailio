@@ -292,9 +292,8 @@ they'd prefer (Opus, G.722, PCMA, …). PT 0 = PCMU (G.711 μ-law, 8 kHz,
 mono) per RFC 3551; PT 101 = telephone-event for DTMF. The record branch
 decodes that μ-law to PCM (`Membrane.RTP.G711.Depayloader →
 Membrane.G711.FFmpeg.Decoder`) and serializes a WAV, so every relay-side
-`.wav` plays directly. (Swap in `SDP.rewrite_endpoint/2` to forward the
-peers' negotiated codecs instead — but then the record branch's hardcoded
-PCMU decode would need to follow the negotiated codec too.)
+`.wav` plays directly. (Forward the peers' negotiated codecs instead and the
+record branch's hardcoded PCMU decode would need to follow suit.)
 
 ### Call teardown (Record-Route / advertise address)
 

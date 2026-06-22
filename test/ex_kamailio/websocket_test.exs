@@ -1,27 +1,41 @@
+defmodule ExKamailio.WebSocketTest.Reply do
+  @moduledoc false
+  @sdp ExSDP.parse!("""
+       v=0\r
+       o=- 0 0 IN IP4 192.0.2.1\r
+       s=-\r
+       t=0 0\r
+       m=audio 30000 RTP/AVP 0 101\r
+       c=IN IP4 192.0.2.1\r
+       a=sendrecv\r
+       """)
+  def sdp, do: @sdp
+end
+
 defmodule ExKamailio.WebSocketTest do
   use ExUnit.Case, async: false
   @moduletag :capture_log
 
-  alias ExKamailio.{SDP, WebSocket}
+  alias ExKamailio.WebSocket
 
   defmodule TestHandler do
     use ExKamailio.CallHandler
 
-    @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
+    alias ExKamailio.WebSocketTest.Reply
 
     @impl true
     def init(opts), do: {:ok, %{calls: opts[:report_to] || self()}}
 
     @impl true
-    def handle_offer(offer, session, state) do
+    def handle_offer(_offer, session, state) do
       send(state.calls, {:offer_called, session})
-      {:ok, SDP.rewrite_endpoint(offer, @local), state}
+      {:ok, Reply.sdp(), state}
     end
 
     @impl true
-    def handle_answer(answer, session, state) do
+    def handle_answer(_answer, session, state) do
       send(state.calls, {:answer_called, session})
-      {:ok, SDP.rewrite_endpoint(answer, @local), state}
+      {:ok, Reply.sdp(), state}
     end
 
     @impl true
@@ -189,19 +203,19 @@ defmodule ExKamailio.WebSocketTest do
   defmodule MarkingHandler do
     use ExKamailio.CallHandler
 
-    @local %ExKamailio.Endpoint{ip: "192.0.2.1", rtp_port: 30_000, rtcp_port: 30_001}
+    alias ExKamailio.WebSocketTest.Reply
 
     @impl true
     def init(opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
 
     @impl true
-    def handle_offer(offer, session, state) do
-      {:ok, SDP.rewrite_endpoint(offer, @local), %{state | mark: session.call_id}}
+    def handle_offer(_offer, session, state) do
+      {:ok, Reply.sdp(), %{state | mark: session.call_id}}
     end
 
     @impl true
-    def handle_answer(answer, _session, state),
-      do: {:ok, SDP.rewrite_endpoint(answer, @local), state}
+    def handle_answer(_answer, _session, state),
+      do: {:ok, Reply.sdp(), state}
 
     @impl true
     def handle_delete(session, state) do
