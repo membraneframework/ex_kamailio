@@ -2,7 +2,7 @@ defmodule ExKamailio.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/membraneframework-labs/ex_media"
+  @source_url "https://github.com/membraneframework-labs/ex_kamailio"
 
   def project do
     [

@@ -5,14 +5,17 @@ functionality; it's a reminder so the decisions don't get lost.
 
 ## Before any Hex release
 
-- **Tag `v0.1.0`.** `mix.exs` sets `docs: [source_ref: "v#{@version}"]`, but no
-  git tag exists yet, so the "source" links in generated HexDocs will 404.
+- **Tag `v0.1.0`.** `mix.exs` sets `docs: [source_ref: "v#{@version}"]`, so
+  HexDocs "source" links point at `blob/v0.1.0/...`. Create the git tag on the
+  published commit, as the last step before `mix hex.publish`:
+  `git tag v0.1.0 && git push origin v0.1.0`. (The stray `0.0.1` tag lacks the
+  `v` prefix `source_ref` expects — delete or ignore it.)
 
-- **`source_url` / repo name.** The library now lives at the repo root, so
-  `source_url` (`github.com/membraneframework-labs/ex_media`) resolves correctly
-  and HexDocs source links no longer 404 on a subdir. Remaining mismatch: the
-  repo is still named `ex_media` while the package is `ex_kamailio` — decide
-  whether to rename the GitHub repo before publishing.
+- **Repo rename `ex_media` → `ex_kamailio`.** Decided: repo and package both
+  `ex_kamailio`. `@source_url` in `mix.exs` and the local directory are already
+  updated. Remaining manual steps: rename the repo on GitHub (auto-redirects the
+  old URL), then `git remote set-url origin
+  git@github.com:membraneframework-labs/ex_kamailio.git`.
 
 ## Library-provided `kamailio.cfg` (`priv/kamailio/kamailio.cfg`)
 
