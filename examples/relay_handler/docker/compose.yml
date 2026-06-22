@@ -63,6 +63,10 @@ services:
 
   kamailio:
     build: ./kamailio
+    environment:
+      # The cfg reads the rtpengine ng socket from $env(RTPENGINE_SOCK); on the
+      # bridge network the relay is reachable as `relay` via docker DNS.
+      RTPENGINE_SOCK: ws://relay:4003
     volumes:
       - ../../../priv/kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
     # Wait until the relay's control socket is actually listening, not just

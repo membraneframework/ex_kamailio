@@ -13,12 +13,9 @@ services:
   kamailio:
     network_mode: host
     environment:
+      # The cfg reads both from $env() at parse time — no templating needed.
       ADVERTISE_IP: ${ADVERTISE_IP:?set ADVERTISE_IP — run ./tailscale-lan.sh, or export it to your reachable LAN IP}
-    # Template ADVERTISE_IP into the cfg's ADVERTISE_PLACEHOLDER, then exec.
-    # -A LAN_MODE selects the loopback rtpengine_sock + advertise/alias lines.
-    entrypoint: ["sh", "-c"]
-    command:
-      - |
-        sed "s/ADVERTISE_PLACEHOLDER/$$ADVERTISE_IP/g" /etc/kamailio/kamailio.cfg > /tmp/kamailio.cfg
-        echo "[kamailio] advertising $$ADVERTISE_IP in Record-Route/Via"
-        exec kamailio -f /tmp/kamailio.cfg -DD -E -A LAN_MODE
+      RTPENGINE_SOCK: ws://127.0.0.1:4003
+    # -A LAN_MODE selects the advertise/alias listen lines (and makes the cfg
+    # consult ADVERTISE_IP); RTPENGINE_SOCK points rtpengine over loopback.
+    command: ["kamailio", "-f", "/etc/kamailio/kamailio.cfg", "-DD", "-E", "-A", "LAN_MODE"]
