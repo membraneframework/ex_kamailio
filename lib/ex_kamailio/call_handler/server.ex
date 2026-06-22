@@ -63,6 +63,14 @@ defmodule ExKamailio.CallHandler.Server do
 
   # -- GenServer --
 
+  # TODO: prompt teardown of crashed calls (rtpengine --b2b-url analogue).
+  # A raise in handle_info/3 or handle_timeout/2 kills this process silently:
+  # the registry entry drops, but the ng protocol is request/response, so
+  # Kamailio keeps the SIP dialog up with dead media until someone hangs up.
+  # Mirror rtpengine: load Kamailio's `dialog` module + `jsonrpcs`, monitor
+  # the call process, and POST `dlg.terminate_dlg` (call-id + from/to tags)
+  # on abnormal exit.
+
   @impl true
   def init({call_id, impl, impl_opts}) do
     {:ok, inner_state} = impl.init(impl_opts)
