@@ -134,10 +134,7 @@ defmodule ExKamailio.WebSocket do
   defp parse_sdp(nil), do: {:error, :no_sdp}
 
   defp parse_sdp(text) when is_binary(text) do
-    case ExSDP.parse(text) do
-      {:ok, sdp} -> {:ok, sdp}
-      {:error, error} -> {:error, error}
-    end
+    ExSDP.parse(text)
   rescue
     error -> {:error, error}
   end
@@ -151,7 +148,5 @@ defmodule ExKamailio.WebSocket do
     push(cookie, %{"result" => "error", "error-reason" => reason}, state)
   end
 
-  defp fetch_id(cmd, key, default \\ "unknown") do
-    Map.get(cmd, key, default)
-  end
+  defp fetch_id(cmd, key), do: Map.get(cmd, key, "unknown")
 end

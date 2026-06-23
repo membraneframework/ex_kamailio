@@ -77,8 +77,6 @@ defmodule ExKamailio.CallHandler.Server do
       impl: impl,
       inner_state: inner_state,
       session: nil,
-      to_answerer_sdp_string: nil,
-      to_offerer_sdp_string: nil,
       timeout: ConstantsAndVariables.call_timeout(),
       timer_ref: nil
     }
@@ -87,9 +85,12 @@ defmodule ExKamailio.CallHandler.Server do
   end
 
   @impl true
-  def handle_call({__MODULE__, :offer, _session}, _from, %{to_answerer_sdp_string: reply} = state)
-      when is_binary(reply) do
-    {:reply, {:ok, reply}, state}
+  def handle_call(
+        {__MODULE__, :offer, _session},
+        _from,
+        %{session: %{to_answerer_sdp: %ExSDP{} = sdp}} = state
+      ) do
+    {:reply, {:ok, to_string(sdp)}, state}
   end
 
   def handle_call({__MODULE__, :offer, session}, _from, state) do
@@ -97,19 +98,16 @@ defmodule ExKamailio.CallHandler.Server do
       state.impl.handle_offer(session.from_offerer_sdp, session, state.inner_state)
 
     session = %{session | to_answerer_sdp: sdp}
-    reply = to_string(sdp)
-
-    state = %{state | session: session, inner_state: inner_state, to_answerer_sdp_string: reply}
-    {:reply, {:ok, reply}, arm_timer(state)}
+    state = %{state | session: session, inner_state: inner_state}
+    {:reply, {:ok, to_string(sdp)}, arm_timer(state)}
   end
 
   def handle_call(
         {__MODULE__, :answer, %{to_tag: to_tag}},
         _from,
-        %{session: %{to_tag: to_tag}, to_offerer_sdp_string: reply} = state
-      )
-      when is_binary(reply) do
-    {:reply, {:ok, reply}, state}
+        %{session: %{to_tag: to_tag, to_offerer_sdp: %ExSDP{} = sdp}} = state
+      ) do
+    {:reply, {:ok, to_string(sdp)}, state}
   end
 
   def handle_call(
@@ -123,10 +121,8 @@ defmodule ExKamailio.CallHandler.Server do
       state.impl.handle_answer(session.from_answerer_sdp, session, state.inner_state)
 
     session = %{session | to_offerer_sdp: sdp}
-    reply = to_string(sdp)
-
-    state = %{state | session: session, inner_state: inner_state, to_offerer_sdp_string: reply}
-    {:reply, {:ok, reply}, arm_timer(state)}
+    state = %{state | session: session, inner_state: inner_state}
+    {:reply, {:ok, to_string(sdp)}, arm_timer(state)}
   end
 
   def handle_call({__MODULE__, :answer, _fields}, _from, state) do
