@@ -1,13 +1,11 @@
 defmodule ExKamailio.CallHandler.Server do
-  @moduledoc """
-  One process per call: runs the user handler's callbacks and holds that call's
-  `%ExKamailio.Session{}` (including the handler's own state) in its memory.
-
-  Spawned under `ExKamailio.CallSupervisor` and registered by `call_id` in
-  `ExKamailio.CallRegistry`, so an `offer`/`answer`/`delete` arriving on any
-  pooled WebSocket connection routes to the same process. The registry entry is
-  dropped automatically when the process stops.
-  """
+  @moduledoc false
+  # One process per call: runs the handler's callbacks and holds the call's
+  # `%ExKamailio.Session{}` (plus the handler's own state).
+  #
+  # Registered by `call_id` in `ExKamailio.CallRegistry`, so a command arriving on
+  # any pooled WebSocket connection routes to the same process; the registry entry
+  # drops when the process stops.
 
   use GenServer
   require Logger
@@ -16,7 +14,7 @@ defmodule ExKamailio.CallHandler.Server do
 
   # -- public API (used by ExKamailio.WebSocket) --
 
-  @doc "Spawn (or look up) the call process for `call_id`, seeding handler state via `impl.init/1`."
+  # Spawn (or look up) the call process for `call_id`, seeding handler state via `impl.init/1`.
   @spec start_call(String.t(), module(), keyword()) :: {:ok, pid()} | {:error, term()}
   def start_call(call_id, impl, impl_opts) do
     spec = %{
@@ -63,13 +61,12 @@ defmodule ExKamailio.CallHandler.Server do
 
   # -- GenServer --
 
-  # TODO: prompt teardown of crashed calls (rtpengine --b2b-url analogue).
-  # A raise in handle_info/3 or handle_timeout/2 kills this process silently:
-  # the registry entry drops, but the ng protocol is request/response, so
-  # Kamailio keeps the SIP dialog up with dead media until someone hangs up.
-  # Mirror rtpengine: load Kamailio's `dialog` module + `jsonrpcs`, monitor
-  # the call process, and POST `dlg.terminate_dlg` (call-id + from/to tags)
-  # on abnormal exit.
+  # TODO: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
+  # A raise in handle_info/3 or handle_timeout/2 kills this process silently — the
+  # registry entry drops, but the request/response ng protocol leaves Kamailio's
+  # SIP dialog up with dead media until someone hangs up. Mirror rtpengine: load
+  # the `dialog` module + `jsonrpcs`, monitor the call process, and POST
+  # `dlg.terminate_dlg` on abnormal exit.
 
   @impl true
   def init({call_id, impl, impl_opts}) do

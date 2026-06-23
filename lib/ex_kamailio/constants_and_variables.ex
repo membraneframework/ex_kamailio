@@ -1,8 +1,6 @@
 defmodule ExKamailio.ConstantsAndVariables do
-  @moduledoc """
-  Single source for the process names and application environment the rest of
-  ex_kamailio reads.
-  """
+  @moduledoc false
+  # Process names and app environment the rest of ex_kamailio reads.
 
   def call_registry, do: ExKamailio.CallRegistry
 
@@ -10,7 +8,7 @@ defmodule ExKamailio.ConstantsAndVariables do
 
   def ws_port, do: Application.fetch_env!(:ex_kamailio, :ws_port)
 
-  @doc "The configured handler, normalized to `{module, init_opts}`."
+  # The configured handler, normalized to `{module, init_opts}`.
   def call_handler do
     case Application.fetch_env!(:ex_kamailio, :call_handler) do
       {mod, opts} -> {mod, opts}

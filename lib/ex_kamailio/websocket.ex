@@ -1,18 +1,10 @@
 defmodule ExKamailio.WebSocket do
-  @moduledoc """
-  WebSock handler for Kamailio's rtpengine `ng` control protocol over
-  WebSocket.
-
-  Each Kamailio connection produces one WebSocket process, which is a thin
-  router: it decodes the `<cookie> <payload>` wire format, parses the SDP into
-  an `ExKamailio.Session`, and dispatches the command to the call's own process
-  (`ExKamailio.CallHandler.Server`, looked up by `call_id` in
-  `ExKamailio.CallRegistry`). The call process runs the user's `CallHandler`
-  callbacks and holds that call's state; this process only ships SDP in and out.
-
-  This module is the only ex_kamailio code that talks the rtpengine protocol
-  directly. Everything user-facing flows through `ExKamailio.CallHandler`.
-  """
+  @moduledoc false
+  # WebSock handler for Kamailio's rtpengine `ng` protocol. Each connection is one
+  # WebSocket process, a thin router: it decodes the `<cookie> <payload>` frame,
+  # parses the SDP, and dispatches to the call's process (`CallHandler.Server`,
+  # keyed by `call_id` in `ExKamailio.CallRegistry`). The only module that speaks
+  # rtpengine directly.
 
   @behaviour WebSock
   require Logger
