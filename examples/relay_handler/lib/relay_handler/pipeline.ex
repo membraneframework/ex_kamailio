@@ -41,13 +41,13 @@ defmodule RelayHandler.Pipeline do
   alias Membrane.G711.FFmpeg.Decoder, as: G711Decoder
   alias Membrane.RTP.G711.Depayloader, as: G711Depayloader
   alias Membrane.File, as: MFile
-  alias ExKamailio.Endpoint, as: EkEndpoint
+  alias RelayHandler.Endpoint
 
   @type opts :: %{
           call_id: String.t(),
           local_ip: :inet.socket_address(),
           listen_port: :inet.port_number(),
-          send_to: EkEndpoint.t()
+          send_to: Endpoint.t()
         }
 
   @impl true
@@ -102,7 +102,7 @@ defmodule RelayHandler.Pipeline do
   # One unidirectional leg: receive RTP on `listen_port`, fan out to a UDP sink
   # toward `dest` and to a WAV recorder. `dir` names both the recording file and
   # the packet counter, and keeps the per-leg child names unique.
-  defp leg(dir, state, listen_port, %EkEndpoint{} = dest) do
+  defp leg(dir, state, listen_port, %Endpoint{} = dest) do
     wav = Path.join(state.recordings_dir, "#{state.safe_id}__#{dir}.wav")
     counter = Map.fetch!(state.counters, dir)
 

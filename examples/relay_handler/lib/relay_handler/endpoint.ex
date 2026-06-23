@@ -1,9 +1,9 @@
-defmodule ExKamailio.Endpoint do
+defmodule RelayHandler.Endpoint do
   @moduledoc """
   A single network endpoint — IP and RTP/RTCP ports.
 
-  Used to describe both the local endpoint allocated by ex_kamailio and the
-  remote endpoint parsed from a SIP party's SDP.
+  Internal bookkeeping for the relay: describes both the local socket this
+  handler binds and the remote endpoint parsed from a peer's SDP.
   """
 
   @type ip :: :inet.ip_address() | String.t()

@@ -21,8 +21,7 @@ defmodule RelayHandler do
   use ExKamailio.CallHandler
 
   require Logger
-  alias ExKamailio.Endpoint
-  alias RelayHandler.PortPool
+  alias RelayHandler.{Endpoint, PortPool}
 
   @impl true
   def init(_opts) do
