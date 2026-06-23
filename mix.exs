@@ -46,7 +46,7 @@ defmodule ExKamailio.MixProject do
   defp package do
     [
       maintainers: ["Membrane Framework Team"],
-      licenses: ["Apache-2.0"],
+      licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
       files: ~w(lib priv mix.exs README.md LICENSE .formatter.exs)
     ]

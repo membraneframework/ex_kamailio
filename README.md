@@ -149,7 +149,8 @@ relevant parts as open source.
 
 ## License
 
-Apache-2.0.
+MIT — see [LICENSE](LICENSE). Portions derive from the ex_media project by
+Javier Gallart / BTS, used with permission.
 
 [kamailio]: https://www.kamailio.org/
 [membrane]: https://membrane.stream/
