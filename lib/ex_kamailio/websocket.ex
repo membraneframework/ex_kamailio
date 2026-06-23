@@ -17,7 +17,7 @@ defmodule ExKamailio.WebSocket do
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{CallHandler, ConstantsAndVariables, SDP, Session}
+  alias ExKamailio.{CallHandler, ConstantsAndVariables, Session}
 
   @impl true
   def init(_args) do
@@ -129,7 +129,7 @@ defmodule ExKamailio.WebSocket do
   # -- bencode/wire helpers --
 
   defp with_sdp(cookie, cmd, state, fun) do
-    case SDP.parse(Map.get(cmd, "sdp")) do
+    case parse_sdp(Map.get(cmd, "sdp")) do
       {:ok, sdp} ->
         fun.(sdp)
 
@@ -137,6 +137,17 @@ defmodule ExKamailio.WebSocket do
         Logger.error("#{cmd["command"]} SDP parse failed: #{inspect(reason)}")
         push_error(cookie, "invalid sdp", state)
     end
+  end
+
+  defp parse_sdp(nil), do: {:error, :no_sdp}
+
+  defp parse_sdp(text) when is_binary(text) do
+    case ExSDP.parse(text) do
+      {:ok, sdp} -> {:ok, sdp}
+      {:error, error} -> {:error, error}
+    end
+  rescue
+    error -> {:error, error}
   end
 
   defp push(cookie, payload, state) do

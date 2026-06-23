@@ -311,5 +311,27 @@ defmodule ExKamailio.WebSocketTest do
 
       assert decode!(reply)["result"] == "error"
     end
+
+    test "rejects an offer with an unparseable SDP body, without starting a call",
+         %{state: state} do
+      msg =
+        frame("aaaaa", %{command: "offer", "call-id": "bad-sdp", "from-tag": "f1", sdp: "not sdp"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+      refute registered?("bad-sdp")
+    end
+
+    test "rejects an offer with no SDP body, without starting a call", %{state: state} do
+      msg = frame("aaaaa", %{command: "offer", "call-id": "no-sdp", "from-tag": "f1"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+      refute registered?("no-sdp")
+    end
   end
 end
