@@ -49,8 +49,8 @@ config :ex_kamailio,
 
 ex_kamailio is a pure SDP shuttle: it owns no media ports and picks no
 codecs. Your handler binds its own sockets and advertises them in the SDP it
-returns. The advertised IP is the handler's choice too — see how the
-relay_handler example auto-detects this host's first non-loopback IPv4.
+returns. The advertised IP is the handler's choice too — your handler can,
+for instance, auto-detect this host's first non-loopback IPv4.
 
 ## Writing a handler
 
@@ -126,17 +126,14 @@ involved in the media path at all.
 
 ## Testing
 
-Two paths, increasing in cost:
+The library's own suite drives the `ExKamailio.WebSocket` handler and the
+per-call server directly, with no Kamailio required:
 
-1. **Smoke test, no Kamailio needed.** Run
-   `mix kamailio.smoke` from inside `examples/relay_handler`. It
-   boots ex_kamailio and connects to it over a real WebSocket on
-   loopback, replaying a realistic offer/answer/delete sequence.
-2. **Full SIP path with real Kamailio.** Drive Kamailio with the
-   library-provided reference config (`priv/kamailio/kamailio.cfg`,
-   which wires up the `rtpengine` + `lwsc` modules pointing at
-   ex_kamailio) from SIPp UAC + UAS. See
-   `examples/relay_handler/docker/README.md` for the step-by-step setup.
+    mix test
+
+For a full SIP path, point a real Kamailio at the library-provided reference
+config (`priv/kamailio/kamailio.cfg`, which wires up the `rtpengine` + `lwsc`
+modules to ex_kamailio) and drive it with a SIP test tool such as SIPp.
 
 ## Status
 
