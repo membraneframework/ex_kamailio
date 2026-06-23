@@ -120,8 +120,7 @@ defmodule ExKamailio.WebSocket do
   end
 
   # TODO: the `update` and `query` rtpengine commands would slot in here as
-  # their own dispatch/4 clauses above this fallback (the rest of the roadmap —
-  # ICE, DTLS/SRTP, transcoding — is media-plane, not command dispatch).
+  # their own dispatch/4 clauses above this fallback.
   defp dispatch(other, cookie, _cmd, state) do
     Logger.warning("unknown rtpengine command: #{inspect(other)}")
     push_error(cookie, "unsupported", state)
