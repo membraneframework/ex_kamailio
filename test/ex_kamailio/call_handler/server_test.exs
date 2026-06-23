@@ -59,9 +59,9 @@ defmodule ExKamailio.CallHandler.ServerTest do
     def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
-    def handle_timeout(session, st) do
-      send(st.report_to, {:timeout, session.call_id})
-      {:noreply, st}
+    def handle_idle(session, st) do
+      send(st.report_to, {:idle, session.call_id})
+      {:ok, st}
     end
   end
 
@@ -201,10 +201,10 @@ defmodule ExKamailio.CallHandler.ServerTest do
     assert eventually_unregistered("c4")
   end
 
-  test "the default handle_timeout reaps the call: runs delete then stops" do
-    prev = Application.get_env(:ex_kamailio, :call_timeout)
-    Application.put_env(:ex_kamailio, :call_timeout, 50)
-    on_exit(fn -> Application.put_env(:ex_kamailio, :call_timeout, prev) end)
+  test "the default handle_idle reaps the call: runs delete then stops" do
+    prev = Application.get_env(:ex_kamailio, :idle_timeout)
+    Application.put_env(:ex_kamailio, :idle_timeout, 50)
+    on_exit(fn -> Application.put_env(:ex_kamailio, :idle_timeout, prev) end)
 
     {:ok, pid} = CallHandler.Server.start_call("c5", ApiHandler, report_to: self())
     ref = Process.monitor(pid)
@@ -215,15 +215,15 @@ defmodule ExKamailio.CallHandler.ServerTest do
     assert eventually_unregistered("c5")
   end
 
-  test "a custom handle_timeout returning :noreply keeps the call alive" do
-    prev = Application.get_env(:ex_kamailio, :call_timeout)
-    Application.put_env(:ex_kamailio, :call_timeout, 50)
-    on_exit(fn -> Application.put_env(:ex_kamailio, :call_timeout, prev) end)
+  test "a custom handle_idle returning {:ok, state} keeps the call alive" do
+    prev = Application.get_env(:ex_kamailio, :idle_timeout)
+    Application.put_env(:ex_kamailio, :idle_timeout, 50)
+    on_exit(fn -> Application.put_env(:ex_kamailio, :idle_timeout, prev) end)
 
     {:ok, _} = CallHandler.Server.start_call("c6", ExtendHandler, report_to: self())
     {:ok, _} = CallHandler.Server.call_offer("c6", offer_session("c6"))
 
-    assert_receive {:timeout, "c6"}, 500
+    assert_receive {:idle, "c6"}, 500
     assert registered?("c6")
   end
 

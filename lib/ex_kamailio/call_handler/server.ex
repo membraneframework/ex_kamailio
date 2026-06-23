@@ -12,9 +12,6 @@ defmodule ExKamailio.CallHandler.Server do
 
   alias ExKamailio.ConstantsAndVariables
 
-  # -- public API (used by ExKamailio.WebSocket) --
-
-  # Spawn (or look up) the call process for `call_id`, seeding handler state via `impl.init/1`.
   @spec start_call(String.t(), module(), keyword()) :: {:ok, pid()} | {:error, term()}
   def start_call(call_id, impl, impl_opts) do
     spec = %{
@@ -23,21 +20,25 @@ defmodule ExKamailio.CallHandler.Server do
       restart: :temporary
     }
 
-    case DynamicSupervisor.start_child(ConstantsAndVariables.call_supervisor(), spec) do
+    ConstantsAndVariables.call_supervisor()
+    |> DynamicSupervisor.start_child(spec)
+    |> case do
       {:error, {:already_started, pid}} -> {:ok, pid}
       other -> other
     end
   end
 
   @spec call_offer(String.t(), ExKamailio.Session.t()) :: {:ok, binary()} | {:error, term()}
-  def call_offer(call_id, session), do: request(call_id, {__MODULE__, :offer, session})
+  def call_offer(call_id, session),
+    do: request(call_id, {__MODULE__, :offer, session})
 
   @spec call_answer(String.t(), map()) :: {:ok, binary()} | {:error, term()}
   def call_answer(call_id, answer_fields),
     do: request(call_id, {__MODULE__, :answer, answer_fields})
 
   @spec call_delete(String.t()) :: :ok | {:error, term()}
-  def call_delete(call_id), do: request(call_id, {__MODULE__, :delete})
+  def call_delete(call_id),
+    do: request(call_id, {__MODULE__, :delete})
 
   defp request(call_id, request) do
     GenServer.call(via(call_id), request, ConstantsAndVariables.rtpengine_command_timeout())
@@ -59,16 +60,22 @@ defmodule ExKamailio.CallHandler.Server do
 
   defp via(call_id), do: {:via, Registry, {ConstantsAndVariables.call_registry(), call_id}}
 
-  # -- GenServer --
-
   # TODO: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
-  # A raise in handle_info/3 or handle_timeout/2 kills this process silently — the
-  # registry entry drops, but the request/response ng protocol leaves Kamailio's
-  # SIP dialog up with dead media until someone hangs up. Mirror rtpengine: load
-  # the `dialog` module + `jsonrpcs`, monitor the call process, and POST
-  # `dlg.terminate_dlg` on abnormal exit.
+  # Right now information about crash of a call handler process does not
+  # reach Kamailio. Possible fix: load the `dialog` module + `jsonrpcs` in .cfg,
+  # monitor the call process, and POST `dlg.terminate_dlg` on abnormal exit.
 
   @impl true
+  @spec init({any(), atom(), any()}) ::
+          {:ok,
+           %{
+             call_id: any(),
+             impl: atom(),
+             inner_state: any(),
+             session: nil,
+             timeout: any(),
+             timer_ref: nil
+           }}
   def init({call_id, impl, impl_opts}) do
     {:ok, inner_state} = impl.init(impl_opts)
 
@@ -77,7 +84,7 @@ defmodule ExKamailio.CallHandler.Server do
       impl: impl,
       inner_state: inner_state,
       session: nil,
-      timeout: ConstantsAndVariables.call_timeout(),
+      timeout: ConstantsAndVariables.idle_timeout(),
       timer_ref: nil
     }
 
@@ -142,15 +149,15 @@ defmodule ExKamailio.CallHandler.Server do
   end
 
   @impl true
-  def handle_info({__MODULE__, :call_timeout}, state) do
-    case state.impl.handle_timeout(state.session, state.inner_state) do
+  def handle_info({__MODULE__, :idle}, state) do
+    case state.impl.handle_idle(state.session, state.inner_state) do
       {:stop, inner_state} ->
         state = %{state | inner_state: inner_state}
         Logger.warning("call #{state.call_id} idle-timed out; tearing down")
         run_delete(state)
         {:stop, :normal, state}
 
-      {:noreply, inner_state} ->
+      {:ok, inner_state} ->
         {:noreply, arm_timer(%{state | inner_state: inner_state})}
     end
   end
@@ -159,8 +166,6 @@ defmodule ExKamailio.CallHandler.Server do
     {:ok, inner_state} = state.impl.handle_info(message, state.session, state.inner_state)
     {:noreply, %{state | inner_state: inner_state}}
   end
-
-  # -- internals --
 
   defp run_delete(%{session: nil}), do: :ok
 
@@ -171,6 +176,6 @@ defmodule ExKamailio.CallHandler.Server do
 
   defp arm_timer(state) do
     if state.timer_ref, do: Process.cancel_timer(state.timer_ref)
-    %{state | timer_ref: Process.send_after(self(), {__MODULE__, :call_timeout}, state.timeout)}
+    %{state | timer_ref: Process.send_after(self(), {__MODULE__, :idle}, state.timeout)}
   end
 end

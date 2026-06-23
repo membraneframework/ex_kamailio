@@ -21,7 +21,7 @@ defmodule ExKamailio.CallHandler do
 
   `use ExKamailio.CallHandler` declares the behaviour and supplies overridable
   defaults for `c:init/1` (`{:ok, %{}}`), `c:handle_delete/2` (no-op) and
-  `c:handle_timeout/2` (tear the call down), so a handler need only define
+  `c:handle_idle/2` (reap the call when idle), so a handler need only define
   `c:handle_offer/3` and `c:handle_answer/3`. `@behaviour ExKamailio.CallHandler`
   works too, but then you define every non-optional callback yourself.
 
@@ -74,12 +74,14 @@ defmodule ExKamailio.CallHandler do
     * `c:handle_info/3` — receive plain messages in the call process (e.g. a
       `Membrane.Pipeline` reporting back), delivered with the call's session and
       state. Without it, a stray message crashes the call process.
-    * `c:handle_timeout/2` — a call that never receives a `delete` (dropped
-      signaling) would live forever, so each call arms a timer (`:call_timeout`,
-      default 30 min, reset on `offer`/`answer`). On expiry the `use` default tears
-      the call down. The timer counts signaling, not media — only your handler can
-      tell an abandoned call from a long quiet one, so override it to check and
-      extend with `{:noreply, state}`.
+    * `c:handle_idle/2` — a call that never receives a `delete` (dropped
+      signaling) would live forever, so each call arms an idle timer
+      (`:idle_timeout`, default 30 min, reset on `offer`/`answer`). On expiry the
+      `use` default returns `{:stop, state}` and the call is reaped. This is local
+      cleanup only: it frees this call's process and media but does **not** end the
+      SIP dialog — the peers stay in the call until one hangs up. The timer counts
+      signaling, not media, so it cannot tell an abandoned call from a long quiet
+      one; override to inspect the media and keep the call alive with `{:ok, state}`.
 
   ## Callback latency budget
 
@@ -97,7 +99,7 @@ defmodule ExKamailio.CallHandler do
 
   @doc """
   Declares the behaviour and injects overridable defaults for `init/1`,
-  `handle_delete/2` and `handle_timeout/2`. See the module doc.
+  `handle_delete/2` and `handle_idle/2`. See the module doc.
   """
   defmacro __using__(_opts) do
     quote do
@@ -110,9 +112,9 @@ defmodule ExKamailio.CallHandler do
       def handle_delete(_session, state), do: {:ok, state}
 
       @impl true
-      def handle_timeout(_session, state), do: {:stop, state}
+      def handle_idle(_session, state), do: {:stop, state}
 
-      defoverridable init: 1, handle_delete: 2, handle_timeout: 2
+      defoverridable init: 1, handle_delete: 2, handle_idle: 2
     end
   end
 
@@ -128,8 +130,8 @@ defmodule ExKamailio.CallHandler do
 
   @callback handle_info(message :: term(), Session.t(), state()) :: {:ok, state()}
 
-  @callback handle_timeout(Session.t(), state()) ::
-              {:stop, state()} | {:noreply, state()}
+  @callback handle_idle(Session.t(), state()) ::
+              {:ok, state()} | {:stop, state()}
 
   @callback handle_delete(Session.t(), state()) :: {:ok, state()}
 
