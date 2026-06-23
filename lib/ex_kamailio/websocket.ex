@@ -47,8 +47,6 @@ defmodule ExKamailio.WebSocket do
     :ok
   end
 
-  # -- command dispatch --
-
   defp dispatch("ping", cookie, _cmd, state) do
     push(cookie, %{result: "pong"}, state)
   end
@@ -117,8 +115,6 @@ defmodule ExKamailio.WebSocket do
     Logger.warning("unknown rtpengine command: #{inspect(other)}")
     push_error(cookie, "unsupported", state)
   end
-
-  # -- bencode/wire helpers --
 
   defp with_sdp(cookie, cmd, state, fun) do
     case parse_sdp(Map.get(cmd, "sdp")) do

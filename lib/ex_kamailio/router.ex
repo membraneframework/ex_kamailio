@@ -10,7 +10,6 @@ defmodule ExKamailio.Router do
     send_resp(conn, 200, "ok")
   end
 
-  # rtpengine clients connect here and immediately upgrade.
   get "/" do
     WebSockAdapter.upgrade(conn, ExKamailio.WebSocket, %{}, timeout: 6_000_000)
   end
