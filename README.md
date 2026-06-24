@@ -135,6 +135,11 @@ For a full SIP path, point a real Kamailio at the library-provided reference
 config (`priv/kamailio/kamailio.cfg`, which wires up the `rtpengine` + `lwsc`
 modules to ex_kamailio) and drive it with a SIP test tool such as SIPp.
 
+The config reads its connection details from the environment: `RTPENGINE_SOCK`
+(the `ng` WebSocket URL of your ex_kamailio app, e.g. `ws://127.0.0.1:4003`)
+and, when started with `-A LAN_MODE`, `ADVERTISE_IP` (the address peers use to
+reach Kamailio). The config header documents both.
+
 ## Status
 
 Early alpha. Implements the `offer` / `answer` / `delete` / `ping` rtpengine
