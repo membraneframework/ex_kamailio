@@ -135,10 +135,19 @@ For a full SIP path, point a real Kamailio at the library-provided reference
 config (`priv/kamailio/kamailio.cfg`, which wires up the `rtpengine` + `lwsc`
 modules to ex_kamailio) and drive it with a SIP test tool such as SIPp.
 
-The config reads its connection details from the environment: `RTPENGINE_SOCK`
-(the `ng` WebSocket URL of your ex_kamailio app, e.g. `ws://127.0.0.1:4003`)
-and, when started with `-A LAN_MODE`, `ADVERTISE_IP` (the address peers use to
-reach Kamailio). The config header documents both.
+The config takes its connection details from the environment:
+
+- `RTPENGINE_SOCK` — the `ng` control socket of your ex_kamailio app, as a
+  WebSocket URL. Use `ws://127.0.0.1:4003` when Kamailio shares the host's
+  network (loopback), or `ws://<name>:4003` when it reaches the app by DNS
+  (e.g. a Docker service name).
+- `ADVERTISE_IP` — the address peers use to reach Kamailio. Only consulted in
+  LAN mode (below); leave it unset otherwise.
+
+By default Kamailio binds UDP `0.0.0.0:5060` and advertises that bind address.
+That breaks once peers aren't on the same host, because in-dialog requests
+(BYE/ACK) get pointed back at `0.0.0.0`. Start Kamailio with `-A LAN_MODE` to
+instead advertise `ADVERTISE_IP`, the routable address you set above.
 
 ## Status
 
