@@ -48,7 +48,7 @@ config :ex_kamailio,
   idle_timeout: :timer.minutes(30),
 
   # Per-callback deadline; keep under Kamailio's `rtpengine_tout_ms`. Default: 800 ms.
-  rtpengine_command_timeout: 800
+  callback_timeout: 800
 ```
 
 `ex_kamailio` is a pure SDP shuttle: it owns no media ports and picks no

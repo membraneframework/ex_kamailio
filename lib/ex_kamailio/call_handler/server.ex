@@ -47,7 +47,7 @@ defmodule ExKamailio.CallHandler.Server do
     do: request(call_id, {__MODULE__, :delete})
 
   defp request(call_id, request) do
-    GenServer.call(via(call_id), request, ConstantsAndVariables.rtpengine_command_timeout())
+    GenServer.call(via(call_id), request, ConstantsAndVariables.callback_timeout())
   catch
     :exit, {:timeout, _call_details} ->
       GenServer.cast(via(call_id), {__MODULE__, :abort})

@@ -62,10 +62,10 @@ defmodule ExKamailio.CallHandler do
   Kamailio blocks a SIP worker waiting for each reply and, on timeout
   (`rtpengine_tout_ms`, default 1000 ms), disables the node for
   `rtpengine_disable_tout` (default 60 s) — failing every call meanwhile. So
-  ex_kamailio waits at most `:rtpengine_command_timeout` (default 800 ms) for a
+  ex_kamailio waits at most `:callback_timeout` (default 800 ms) for a
   callback, then returns an in-time error and tears that one call down (still
   running `c:handle_delete/2`). Keep slow work out of callbacks; if you raise
-  `:rtpengine_command_timeout`, raise `rtpengine_tout_ms` with it.
+  `:callback_timeout`, raise `rtpengine_tout_ms` with it.
   """
 
   alias ExKamailio.Session

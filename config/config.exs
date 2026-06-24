@@ -3,6 +3,6 @@ import Config
 config :ex_kamailio,
   ws_port: 4003,
   idle_timeout: :timer.minutes(30),
-  rtpengine_command_timeout: 800
+  callback_timeout: 800
 
 if config_env() == :test, do: config(:ex_kamailio, ws_port: 0)

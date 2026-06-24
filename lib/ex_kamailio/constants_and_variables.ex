@@ -16,6 +16,6 @@ defmodule ExKamailio.ConstantsAndVariables do
 
   def idle_timeout, do: Application.get_env(:ex_kamailio, :idle_timeout, :timer.minutes(30))
 
-  def rtpengine_command_timeout,
-    do: Application.get_env(:ex_kamailio, :rtpengine_command_timeout, 800)
+  def callback_timeout,
+    do: Application.get_env(:ex_kamailio, :callback_timeout, 800)
 end
