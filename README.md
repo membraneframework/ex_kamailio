@@ -3,9 +3,8 @@
 Elixir integration for the [Kamailio][kamailio] SIP server.
 
 `ex_kamailio` speaks Kamailio's `rtpengine` `ng` control protocol over a
-WebSocket transport (Bencode-encoded payloads), so a Kamailio routing
-script can delegate media setup to an Elixir application — typically one
-running a [Membrane][membrane] pipeline on the receiving end.
+WebSocket transport, so a Kamailio routing
+script can delegate media setup to an Elixir application.
 
 Kamailio handles SIP signaling; your Elixir code decides what happens to
 the media.
@@ -17,10 +16,11 @@ handle high-volume SIP signaling efficiently. But integrating it with an
 Elixir media stack normally requires a lot of glue. `ex_kamailio`
 collapses that glue into one behaviour you implement.
 
-The library deliberately stays Membrane-free — it has no dependency on
-Membrane itself. You implement the `ExKamailio.CallHandler` behaviour and
-decide what to do with the media (Membrane pipeline, FFmpeg subprocess,
-log-only, etc.).
+One of the library's goals is to make it easy to integrate [Membrane][membrane]
+into services built on SIP and Kamailio. The package carries no Membrane
+dependency itself, but it's designed to make plugging a Membrane pipeline
+between two peers as easy as possible. You can also use it in solutions that
+don't involve Membrane at all — `ex_kamailio` never assumes it.
 
 ## Installation
 
@@ -42,102 +42,97 @@ config :ex_kamailio,
   # rtpengine WebSocket connection.
   ws_port: 4003,
 
-  # Your handler module — implements `ExKamailio.CallHandler`. Use
-  # {module, opts} to pass options to its init/1.
+  # Your handler module that implements `ExKamailio.CallHandler`. Use
+  # {module, opts} to pass options to its init/2.
   call_handler: MyApp.KamailioHandler
 ```
 
-ex_kamailio is a pure SDP shuttle: it owns no media ports and picks no
-codecs. Your handler binds its own sockets and advertises them in the SDP it
-returns. The advertised IP is the handler's choice too — your handler can,
-for instance, auto-detect this host's first non-loopback IPv4.
+`ex_kamailio` is a pure SDP shuttle: it owns no media ports and picks no
+codecs. Your handler can bind its own sockets and advertise them in the 
+SDP it returns. 
 
-## Writing a handler
+## Writing an `ExKamailio.CallHandler` implementation
 
 ```elixir
 defmodule MyApp.KamailioHandler do
   use ExKamailio.CallHandler
 
   @impl true
-  def init(_opts), do: {:ok, %{pipeline: nil}}
+  def init(_session, _opts), do: {:ok, %{pipeline: nil}}
 
   @impl true
   def handle_offer(offer, session, state) do
-    {:ok, reply_sdp, pid} = MyApp.Media.open(session.call_id, offer)
+    {:ok, reply_sdp, pid} = MyApp.MediaPipeline.start_link(session.call_id, offer)
     {:ok, reply_sdp, %{state | pipeline: pid}}
   end
 
   @impl true
   def handle_answer(answer, _session, state) do
-    {:ok, reply_sdp} = MyApp.Media.add_answerer(state.pipeline, answer)
+    {:ok, reply_sdp} = MyApp.MediaPipeline.add_answerer(state.pipeline, answer)
     {:ok, reply_sdp, state}
   end
 
   @impl true
   def handle_delete(_session, state) do
-    MyApp.Media.stop(state.pipeline)
+    MyApp.MediaPipeline.terminate(state.pipeline)
     {:ok, state}
   end
 end
 ```
 
 The callbacks receive the peer's parsed offer/answer (`%ExSDP{}`) and return the
-`%ExSDP{}` to advertise back — pointed at the media socket your code bound. The
-library handles WebSocket plumbing, Bencode parsing, SDP parsing, and per-call
-session bookkeeping; your handler owns the media and the SDP it returns.
-
-`state` is kept **per call** (keyed by `session.call_id`): `init/1` seeds each
-new call, your callbacks receive and return that call's state, and it is dropped
-on `handle_delete/2` — so keeping a pipeline pid in a bare field, as above, is safe even
-with many overlapping calls.
+`%ExSDP{}` to advertise back. Each Kamailio dialog gets its own
+`ExKamailio.CallHandler` process with separate state.
 
 ## Call flow
 
-The peers are named by their RFC 3264 roles — **offerer** proposes SDP,
-**answerer** responds. In the initial `INVITE` (all ex_kamailio implements
-so far) the offerer is the caller.
+The peers are named by their RFC 3264 roles: **offerer** proposes SDP,
+**answerer** responds. In the initial `INVITE` the offerer is the caller.
 
-1. The offerer (A) sends `INVITE` + SDP to Kamailio.
+1. The offerer (Peer A) sends `INVITE` + SDP to Kamailio.
 2. Kamailio forwards the SDP to `ex_kamailio` over the rtpengine
    WebSocket as an `offer` command.
-3. `ex_kamailio` parses the SDP and calls `c:ExKamailio.CallHandler.handle_offer/3`.
-   Your handler binds its media socket and returns an SDP advertising it.
+3. `ex_kamailio` parses the SDP, spawns a new call handler, and calls
+   `c:ExKamailio.CallHandler.handle_offer/3`. Your implementation returns an
+   `%ExSDP{}` struct — the SDP offer for the answerer (Peer B).
 4. `ex_kamailio` sends that SDP back to Kamailio, which puts it into the
-   `INVITE` forwarded to the answerer (B) — it is the offer B sees.
-5. B replies `200 OK` + SDP. Kamailio forwards it as an `answer`
+   `INVITE` forwarded to the answerer.
+5. Peer B replies `200 OK` + SDP. Kamailio forwards it as an `answer`
    command and `ex_kamailio` calls `c:ExKamailio.CallHandler.handle_answer/3`.
-6. Your handler returns the SDP that goes back to A as the answer in
-   the forwarded `200 OK`.
-7. On call teardown, Kamailio sends `delete`, ex_kamailio calls
+6. Your call handler returns the SDP that goes back to Peer A as the answer
+   in the forwarded `200 OK`.
+7. On call teardown, Kamailio sends `delete`, `ex_kamailio` calls
    `c:ExKamailio.CallHandler.handle_delete/2`, and your handler releases whatever it
    allocated.
 
-## NAT and dynamic IPs
+## Idle calls
 
-Clients are typically behind NAT — the IPs in their SDPs are not the
-addresses the RTP actually arrives from. The standard solution is
-symmetric RTP (latching): bind a UDP socket on the local port you
-advertised, wait for the first inbound packet, read the source IP/port
-from the headers, and from then on send to that observed address.
+A call normally ends when Kamailio sends `delete`. Should that never arrive —
+a crashed peer, a lost `BYE` — the call process would otherwise linger forever.
+To guard against this, each call runs an idle timer: when no command arrives
+for `:idle_timeout` (default 30 min), `c:ExKamailio.CallHandler.handle_idle/2`
+fires. Its default returns `{:stop, state}`, which runs `handle_delete/2` and
+then stops the process; override it to return `{:ok, state}` to keep the call
+alive instead.
 
-Both the port and the latching belong in the media component you run
-inside your handler (e.g. `Membrane.UDP.Source`); `ex_kamailio` is not
-involved in the media path at all.
+Note that reaping is local only: it frees the call process but does not end the
+SIP dialog. Even after the call handler is gone, both peers may keep sending and
+expecting media.
 
-## Testing
+## Kamailio config
 
-The library's own suite drives the `ExKamailio.WebSocket` handler and the
-per-call server directly, with no Kamailio required:
+The library ships a reference Kamailio config at `priv/kamailio/kamailio.cfg`,
+which wires up the `rtpengine` + `lwsc` modules to `ex_kamailio`. Point a real
+Kamailio at it to put the library on a full SIP path.
 
-    mix test
+It works with `ex_kamailio` out of the box, but it won't cover every SIP
+scenario you might run into. When it falls short, treat it as a starting
+point, copy it into your project and tweak it (add modules, routing logic,
+whatever you need) as you go.
 
-For a full SIP path, point a real Kamailio at the library-provided reference
-config (`priv/kamailio/kamailio.cfg`, which wires up the `rtpengine` + `lwsc`
-modules to ex_kamailio) and drive it with a SIP test tool such as SIPp.
+It takes its connection details from the environment:
 
-The config takes its connection details from the environment:
-
-- `RTPENGINE_SOCK` — the `ng` control socket of your ex_kamailio app, as a
+- `RTPENGINE_SOCK` — the `ng` control socket of your `ex_kamailio` app, as a
   WebSocket URL. Use `ws://127.0.0.1:4003` when Kamailio shares the host's
   network (loopback), or `ws://<name>:4003` when it reaches the app by DNS
   (e.g. a Docker service name).
@@ -151,7 +146,7 @@ instead advertise `ADVERTISE_IP`, the routable address you set above.
 
 ## Status
 
-Early alpha. Implements the `offer` / `answer` / `delete` / `ping` rtpengine
+Implements the `offer` / `answer` / `delete` / `ping` rtpengine
 commands; `update` and `query` are not yet covered.
 
 ## Acknowledgements
