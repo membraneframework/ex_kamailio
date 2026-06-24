@@ -3,37 +3,30 @@ defmodule ExKamailio.CallHandler do
   Behaviour for user-defined Kamailio rtpengine handlers.
 
   Implement this to plug your media-handling logic into ex_kamailio. The library
-  handles the rtpengine protocol (WebSocket transport, Bencode, session
-  bookkeeping, SDP parsing) and stays a pure SDP shuttle: it allocates no media
+  handles the rtpengine protocol and stays a pure SDP shuttle: it allocates no media
   ports and picks no codecs. Your handler owns the media — it binds its own
   sockets, advertises them in the SDP it returns, and decides what to do with the
-  stream (bridge it through Membrane, transcode via FFmpeg, record, forward).
+  stream (bridge it through Membrane, record, forward).
 
       defmodule MyApp.KamailioHandler do
         use ExKamailio.CallHandler
 
         @impl true
-        def handle_offer(offer, session, state), do: {:ok, reply_sdp, state}
+        def init(_session, _opts), do: {:ok, %{}}
 
         @impl true
-        def handle_answer(answer, session, state), do: {:ok, reply_sdp, state}
+        def handle_offer(from_offerrer_sdp, session, state), do: {:ok, to_answerer_sdp, state}
+
+        @impl true
+        def handle_answer(from_answerer_sdp, session, state), do: {:ok, to_offerer_sdp, state}
       end
 
-  `use ExKamailio.CallHandler` supplies overridable defaults for `c:init/1`,
-  `c:handle_delete/2` and `c:handle_idle/2`, so a handler need only define
+  `use ExKamailio.CallHandler` supplies overridable defaults for
+  `c:handle_delete/2` and `c:handle_idle/2`, so an implementation defines `c:init/2`,
   `c:handle_offer/3` and `c:handle_answer/3`. Register it in config — bare, or
-  `{module, opts}` to pass options to `c:init/1`:
+  `{module, opts}` to pass options to `c:init/2`:
 
       config :ex_kamailio, call_handler: MyApp.KamailioHandler
-
-  ## State is per call
-
-  ex_kamailio runs one process per call (`ExKamailio.CallHandler.Server`), keyed by
-  `session.call_id`. `c:init/1` seeds the state, your callbacks receive and return
-  it, and it is dropped when the call stops — so per-call data (a pipeline pid, say)
-  is safe in a bare field, and overlapping calls never share state. Routing by
-  `call_id` also keeps a call consistent across the WebSocket connections Kamailio
-  pools, even when its `offer`, `answer` and `delete` land on different ones.
 
   ## Call flow
 
@@ -43,17 +36,17 @@ defmodule ExKamailio.CallHandler do
   responds; in the initial `INVITE` (the only exchange implemented so far) that's
   caller and callee.
 
-  1. `c:handle_offer/3` — the offerer's parsed SDP arrives. Bind a media socket and
-     return SDP advertising it; that SDP is the offer the **answerer** sees.
-  2. `c:handle_answer/3` — the answerer's parsed SDP arrives. Return SDP for the
+  1. `c:init/2` — seed the call's state.
+  2. `c:handle_offer/3` — the offerer's parsed SDP arrives. You can e.g. bind a
+     media socket and return SDP advertising it; the SDP returned from this
+     callback is the offer the **answerer** sees.
+  3. `c:handle_answer/3` — the answerer's parsed SDP arrives. Return SDP for the
      other direction; it becomes the answer the **offerer** receives.
-  3. `c:handle_delete/2` — Kamailio tore the call down (`BYE`/`CANCEL`); release
+  4. `c:handle_delete/2` — Kamailio tore the call down (`BYE`/`CANCEL`); release
      what you allocated.
 
-  Each peer negotiates with you, not with the other: ex_kamailio never forwards one
-  peer's SDP onward. Every callback gets the `%ExKamailio.Session{}`, which carries
-  all four SDPs so far. To reject a command, raise — the crash is contained to that
-  call's process, which replies to Kamailio with a Bencode error and stops.
+  Every callback gets the session, filled in as the call progresses — the SDPs
+  and call metadata accumulated so far.
 
   ## Optional callbacks
 
@@ -62,8 +55,7 @@ defmodule ExKamailio.CallHandler do
     * `c:handle_idle/2` — called when no command arrives for `:idle_timeout`
       (default 30 min). The `use` default returns `{:stop, state}` to reap the call;
       return `{:ok, state}` to keep it. Reaping is **local only** — it frees this
-      call's process and media but does not end the SIP dialog, so override it to
-      check whether media is still flowing before letting a quiet call go.
+      call's process but does not end the SIP dialog.
 
   ## Callback latency budget
 
@@ -79,15 +71,12 @@ defmodule ExKamailio.CallHandler do
   alias ExKamailio.Session
 
   @doc """
-  Declares the behaviour and injects overridable defaults for `init/1`,
-  `handle_delete/2` and `handle_idle/2`. See the module doc.
+  Declares the behaviour and injects overridable defaults for `handle_delete/2`
+  and `handle_idle/2`. See the module doc.
   """
   defmacro __using__(_opts) do
     quote do
       @behaviour unquote(__MODULE__)
-
-      @impl true
-      def init(_opts), do: {:ok, %{}}
 
       @impl true
       def handle_delete(_session, state), do: {:ok, state}
@@ -95,13 +84,13 @@ defmodule ExKamailio.CallHandler do
       @impl true
       def handle_idle(_session, state), do: {:stop, state}
 
-      defoverridable init: 1, handle_delete: 2, handle_idle: 2
+      defoverridable handle_delete: 2, handle_idle: 2
     end
   end
 
   @type state :: term()
 
-  @callback init(opts :: keyword()) :: {:ok, state()}
+  @callback init(session :: Session.t(), opts :: keyword()) :: {:ok, state()}
 
   @callback handle_offer(offer :: ExSDP.t(), Session.t(), state()) ::
               {:ok, reply :: ExSDP.t(), state()}

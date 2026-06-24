@@ -9,7 +9,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
     use ExKamailio.CallHandler
 
     @impl true
-    def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
+    def init(_session, opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
     def handle_offer(_offer, session, st) do
@@ -40,6 +40,9 @@ defmodule ExKamailio.CallHandler.ServerTest do
     use ExKamailio.CallHandler
 
     @impl true
+    def init(_session, _opts), do: {:ok, %{}}
+
+    @impl true
     def handle_offer(_offer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
@@ -50,7 +53,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
     use ExKamailio.CallHandler
 
     @impl true
-    def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
+    def init(_session, opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
     def handle_offer(_offer, _session, st), do: {:ok, ExSDP.new(), st}
@@ -69,7 +72,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
     use ExKamailio.CallHandler
 
     @impl true
-    def init(opts), do: {:ok, %{report_to: opts[:report_to]}}
+    def init(_session, opts), do: {:ok, %{report_to: opts[:report_to]}}
 
     @impl true
     def handle_offer(_offer, _session, st) do
@@ -91,7 +94,26 @@ defmodule ExKamailio.CallHandler.ServerTest do
     use ExKamailio.CallHandler
 
     @impl true
+    def init(_session, _opts), do: {:ok, %{}}
+
+    @impl true
     def handle_offer(_offer, _session, _st), do: raise("boom")
+
+    @impl true
+    def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
+  end
+
+  defmodule InitSessionHandler do
+    use ExKamailio.CallHandler
+
+    @impl true
+    def init(session, opts) do
+      send(opts[:report_to], {:init_session, session})
+      {:ok, %{}}
+    end
+
+    @impl true
+    def handle_offer(_offer, _session, st), do: {:ok, ExSDP.new(), st}
 
     @impl true
     def handle_answer(_answer, _session, st), do: {:ok, ExSDP.new(), st}
@@ -132,7 +154,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "offer/answer/delete round trip threads through one process" do
-    {:ok, _} = CallHandler.Server.start_call("c1", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("c1", "f-c1", ApiHandler, report_to: self())
 
     assert {:ok, offer_reply} = CallHandler.Server.call_offer("c1", offer_session("c1"))
     assert is_binary(offer_reply)
@@ -148,7 +170,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "a retransmitted offer replays the cached reply without re-invoking the handler" do
-    {:ok, _} = CallHandler.Server.start_call("c2a", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("c2a", "f-c2a", ApiHandler, report_to: self())
 
     assert {:ok, reply} = CallHandler.Server.call_offer("c2a", offer_session("c2a"))
     assert_receive {:offer, "c2a"}
@@ -158,7 +180,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "a retransmitted answer replays the cached reply without re-invoking the handler" do
-    {:ok, _} = CallHandler.Server.start_call("c2", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("c2", "f-c2", ApiHandler, report_to: self())
     {:ok, _} = CallHandler.Server.call_offer("c2", offer_session("c2"))
 
     assert {:ok, reply} = CallHandler.Server.call_answer("c2", answer_fields("t1"))
@@ -169,8 +191,8 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "two calls keep independent state in their own processes" do
-    {:ok, _} = CallHandler.Server.start_call("a", ApiHandler, report_to: self())
-    {:ok, _} = CallHandler.Server.start_call("b", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("a", "f-a", ApiHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("b", "f-b", ApiHandler, report_to: self())
 
     {:ok, _} = CallHandler.Server.call_offer("a", offer_session("a"))
     {:ok, _} = CallHandler.Server.call_offer("b", offer_session("b"))
@@ -184,7 +206,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "handle_info/3 is delivered with the call's session" do
-    {:ok, pid} = CallHandler.Server.start_call("c3", ApiHandler, report_to: self())
+    {:ok, pid} = CallHandler.Server.start_call("c3", "f-c3", ApiHandler, report_to: self())
     {:ok, _} = CallHandler.Server.call_offer("c3", offer_session("c3"))
 
     send(pid, :ping_from_pipeline)
@@ -192,7 +214,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "a stray message to a handler without handle_info/3 crashes only that call" do
-    {:ok, pid} = CallHandler.Server.start_call("c4", MinimalHandler, [])
+    {:ok, pid} = CallHandler.Server.start_call("c4", "f-c4", MinimalHandler, [])
     {:ok, _} = CallHandler.Server.call_offer("c4", offer_session("c4"))
     ref = Process.monitor(pid)
 
@@ -206,7 +228,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
     Application.put_env(:ex_kamailio, :idle_timeout, 50)
     on_exit(fn -> Application.put_env(:ex_kamailio, :idle_timeout, prev) end)
 
-    {:ok, pid} = CallHandler.Server.start_call("c5", ApiHandler, report_to: self())
+    {:ok, pid} = CallHandler.Server.start_call("c5", "f-c5", ApiHandler, report_to: self())
     ref = Process.monitor(pid)
     {:ok, _} = CallHandler.Server.call_offer("c5", offer_session("c5"))
 
@@ -220,7 +242,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
     Application.put_env(:ex_kamailio, :idle_timeout, 50)
     on_exit(fn -> Application.put_env(:ex_kamailio, :idle_timeout, prev) end)
 
-    {:ok, _} = CallHandler.Server.start_call("c6", ExtendHandler, report_to: self())
+    {:ok, _} = CallHandler.Server.start_call("c6", "f-c6", ExtendHandler, report_to: self())
     {:ok, _} = CallHandler.Server.call_offer("c6", offer_session("c6"))
 
     assert_receive {:idle, "c6"}, 500
@@ -232,7 +254,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
     Application.put_env(:ex_kamailio, :rtpengine_command_timeout, 50)
     on_exit(fn -> Application.put_env(:ex_kamailio, :rtpengine_command_timeout, prev) end)
 
-    {:ok, pid} = CallHandler.Server.start_call("c8", SlowHandler, report_to: self())
+    {:ok, pid} = CallHandler.Server.start_call("c8", "f-c8", SlowHandler, report_to: self())
     ref = Process.monitor(pid)
 
     assert {:error, :timeout} = CallHandler.Server.call_offer("c8", offer_session("c8"))
@@ -242,10 +264,20 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "a crashing offer becomes {:error, _} and leaves no registered process" do
-    {:ok, _} = CallHandler.Server.start_call("c7", CrashHandler, [])
+    {:ok, _} = CallHandler.Server.start_call("c7", "f-c7", CrashHandler, [])
 
     assert {:error, _} = CallHandler.Server.call_offer("c7", offer_session("c7"))
     assert eventually_unregistered("c7")
+  end
+
+  test "init receives a session with call_id and from_tag set, SDPs not yet" do
+    {:ok, _} = CallHandler.Server.start_call("c9", "tag-9", InitSessionHandler, report_to: self())
+
+    assert_receive {:init_session, session}
+    assert session.call_id == "c9"
+    assert session.from_tag == "tag-9"
+    assert session.to_tag == nil
+    assert session.from_offerer_sdp == nil
   end
 
   test "calls for an unknown call_id return {:error, :unknown}" do

@@ -137,9 +137,8 @@ modules to ex_kamailio) and drive it with a SIP test tool such as SIPp.
 
 ## Status
 
-Early alpha. Implements `offer` / `answer` / `delete` / `ping`. Not
-yet covered: `update`, `query`, ICE, DTLS, transcoding-related
-extensions.
+Early alpha. Implements the `offer` / `answer` / `delete` / `ping` rtpengine
+commands; `update` and `query` are not yet covered.
 
 ## Acknowledgements
 

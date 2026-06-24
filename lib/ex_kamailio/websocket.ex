@@ -54,15 +54,21 @@ defmodule ExKamailio.WebSocket do
   defp dispatch("offer", cookie, cmd, state) do
     with_sdp(cookie, cmd, state, fn offer_sdp ->
       call_id = fetch_id(cmd, "call-id")
+      from_tag = fetch_id(cmd, "from-tag")
 
       session = %Session{
         call_id: call_id,
-        from_tag: fetch_id(cmd, "from-tag"),
+        from_tag: from_tag,
         from_offerer_sdp: offer_sdp
       }
 
       with {:ok, _pid} <-
-             CallHandler.Server.start_call(call_id, state.handler_mod, state.handler_opts),
+             CallHandler.Server.start_call(
+               call_id,
+               from_tag,
+               state.handler_mod,
+               state.handler_opts
+             ),
            {:ok, wire_sdp} <- CallHandler.Server.call_offer(call_id, session) do
         push(cookie, %{result: "ok", sdp: wire_sdp}, state)
       else

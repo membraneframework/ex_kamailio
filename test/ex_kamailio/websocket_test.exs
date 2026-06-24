@@ -24,7 +24,7 @@ defmodule ExKamailio.WebSocketTest do
     alias ExKamailio.WebSocketTest.Reply
 
     @impl true
-    def init(opts), do: {:ok, %{calls: opts[:report_to] || self()}}
+    def init(_session, opts), do: {:ok, %{calls: opts[:report_to] || self()}}
 
     @impl true
     def handle_offer(_offer, session, state) do
@@ -206,7 +206,7 @@ defmodule ExKamailio.WebSocketTest do
     alias ExKamailio.WebSocketTest.Reply
 
     @impl true
-    def init(opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
+    def init(_session, opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
 
     @impl true
     def handle_offer(_offer, session, state) do
@@ -264,6 +264,9 @@ defmodule ExKamailio.WebSocketTest do
 
   defmodule CrashingHandler do
     use ExKamailio.CallHandler
+
+    @impl true
+    def init(_session, _opts), do: {:ok, %{}}
 
     @impl true
     def handle_offer(_sdp, _s, _st), do: raise("boom")

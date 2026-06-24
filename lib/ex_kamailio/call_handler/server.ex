@@ -6,17 +6,23 @@ defmodule ExKamailio.CallHandler.Server do
   # Registered by `call_id` in `ExKamailio.CallRegistry`, so a command arriving on
   # any pooled WebSocket connection routes to the same process; the registry entry
   # drops when the process stops.
+  #
+  # TODO: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
+  # Right now information about crash of a call handler process does not
+  # reach Kamailio. Possible fix: load the `dialog` module + `jsonrpcs` in .cfg,
+  # monitor the call process, and POST `dlg.terminate_dlg` on abnormal exit.
 
   use GenServer
   require Logger
 
-  alias ExKamailio.ConstantsAndVariables
+  alias ExKamailio.{ConstantsAndVariables, Session}
 
-  @spec start_call(String.t(), module(), keyword()) :: {:ok, pid()} | {:error, term()}
-  def start_call(call_id, impl, impl_opts) do
+  @spec start_call(String.t(), String.t() | nil, module(), keyword()) ::
+          {:ok, pid()} | {:error, term()}
+  def start_call(call_id, from_tag, impl, impl_opts) do
     spec = %{
       id: __MODULE__,
-      start: {__MODULE__, :start_link, [{call_id, impl, impl_opts}]},
+      start: {__MODULE__, :start_link, [{call_id, from_tag, impl, impl_opts}]},
       restart: :temporary
     }
 
@@ -28,7 +34,7 @@ defmodule ExKamailio.CallHandler.Server do
     end
   end
 
-  @spec call_offer(String.t(), ExKamailio.Session.t()) :: {:ok, binary()} | {:error, term()}
+  @spec call_offer(String.t(), Session.t()) :: {:ok, binary()} | {:error, term()}
   def call_offer(call_id, session),
     do: request(call_id, {__MODULE__, :offer, session})
 
@@ -54,19 +60,14 @@ defmodule ExKamailio.CallHandler.Server do
       {:error, {:down, reason}}
   end
 
-  def start_link({call_id, _impl, _opts} = arg) do
+  def start_link({call_id, _from_tag, _impl, _opts} = arg) do
     GenServer.start_link(__MODULE__, arg, name: via(call_id))
   end
 
   defp via(call_id), do: {:via, Registry, {ConstantsAndVariables.call_registry(), call_id}}
 
-  # TODO: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
-  # Right now information about crash of a call handler process does not
-  # reach Kamailio. Possible fix: load the `dialog` module + `jsonrpcs` in .cfg,
-  # monitor the call process, and POST `dlg.terminate_dlg` on abnormal exit.
-
   @impl true
-  @spec init({any(), atom(), any()}) ::
+  @spec init({any(), any(), atom(), any()}) ::
           {:ok,
            %{
              call_id: any(),
@@ -76,8 +77,8 @@ defmodule ExKamailio.CallHandler.Server do
              timeout: any(),
              timer_ref: nil
            }}
-  def init({call_id, impl, impl_opts}) do
-    {:ok, inner_state} = impl.init(impl_opts)
+  def init({call_id, from_tag, impl, impl_opts}) do
+    {:ok, inner_state} = impl.init(%Session{call_id: call_id, from_tag: from_tag}, impl_opts)
 
     state = %{
       call_id: call_id,
