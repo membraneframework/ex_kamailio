@@ -49,11 +49,11 @@ defmodule ExKamailio.CallHandler.Server do
   defp request(call_id, request) do
     GenServer.call(via(call_id), request, ConstantsAndVariables.rtpengine_command_timeout())
   catch
-    :exit, {:timeout, _} ->
+    :exit, {:timeout, _call_details} ->
       GenServer.cast(via(call_id), {__MODULE__, :abort})
       {:error, :timeout}
 
-    :exit, {:noproc, _} ->
+    :exit, {:noproc, _call_details} ->
       {:error, :unknown}
 
     :exit, reason ->

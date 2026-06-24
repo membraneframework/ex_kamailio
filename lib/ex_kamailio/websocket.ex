@@ -25,11 +25,11 @@ defmodule ExKamailio.WebSocket do
           {:ok, %{"command" => cmd} = decoded} ->
             dispatch(cmd, cookie, decoded, state)
 
-          _ ->
+          _undecodable ->
             push_error(cookie, "unsupported", state)
         end
 
-      _ ->
+      _no_cookie ->
         Logger.warning("rtpengine frame missing cookie: #{inspect(frame)}")
         {:ok, state}
     end
