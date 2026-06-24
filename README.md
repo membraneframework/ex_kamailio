@@ -38,13 +38,17 @@ end
 
 ```elixir
 config :ex_kamailio,
-  # TCP port the embedded Bandit server listens on for Kamailio's
-  # rtpengine WebSocket connection.
+  # Port the WebSocket server listens on for Kamailio. Required.
   ws_port: 4003,
 
-  # Your handler module that implements `ExKamailio.CallHandler`. Use
-  # {module, opts} to pass options to its init/2.
-  call_handler: MyApp.KamailioHandler
+  # Your `ExKamailio.CallHandler` module, or `{module, opts}`. Required.
+  call_handler: MyApp.KamailioHandler,
+
+  # Idle time before `handle_idle/2` fires. Default: 30 min.
+  idle_timeout: :timer.minutes(30),
+
+  # Per-callback deadline; keep under Kamailio's `rtpengine_tout_ms`. Default: 800 ms.
+  rtpengine_command_timeout: 800
 ```
 
 `ex_kamailio` is a pure SDP shuttle: it owns no media ports and picks no
