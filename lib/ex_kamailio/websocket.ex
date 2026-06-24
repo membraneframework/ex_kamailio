@@ -52,53 +52,49 @@ defmodule ExKamailio.WebSocket do
   end
 
   defp dispatch("offer", cookie, cmd, state) do
-    with_sdp(cookie, cmd, state, fn offer_sdp ->
-      call_id = fetch_id(cmd, "call-id")
-      from_tag = fetch_id(cmd, "from-tag")
+    call_id = fetch_id(cmd, "call-id")
+    from_tag = fetch_id(cmd, "from-tag")
 
-      session = %Session{
-        call_id: call_id,
-        from_tag: from_tag,
-        from_offerer_sdp: offer_sdp
-      }
+    session = %Session{
+      call_id: call_id,
+      from_tag: from_tag
+    }
 
-      with {:ok, _pid} <-
-             CallHandler.Server.start_call(
-               call_id,
-               from_tag,
-               state.handler_mod,
-               state.handler_opts
-             ),
-           {:ok, wire_sdp} <- CallHandler.Server.call_offer(call_id, session) do
-        push(cookie, %{result: "ok", sdp: wire_sdp}, state)
-      else
-        {:error, reason} ->
-          Logger.error("handler offer failed: #{inspect(reason)}")
-          push_error(cookie, "handler offer failed", state)
-      end
-    end)
+    with {:sdp, {:ok, offer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
+         session <- %{session | from_offerer_sdp: offer_sdp},
+         {:ok, _pid} <-
+           CallHandler.Server.start_call(call_id, from_tag, state.handler_mod, state.handler_opts),
+         {:ok, wire_sdp} <- CallHandler.Server.call_offer(call_id, session) do
+      push(cookie, %{result: "ok", sdp: wire_sdp}, state)
+    else
+      {:sdp, {:error, reason}} ->
+        handle_sdp_parsing_error(reason, cookie, cmd, state)
+
+      {:error, reason} ->
+        Logger.error("handler offer failed: #{inspect(reason)}")
+        push_error(cookie, "handler offer failed", state)
+    end
   end
 
   defp dispatch("answer", cookie, cmd, state) do
-    with_sdp(cookie, cmd, state, fn answer_sdp ->
-      fields = %{
-        to_tag: fetch_id(cmd, "to-tag"),
-        from_answerer_sdp: answer_sdp
-      }
+    to_tag = fetch_id(cmd, "to-tag")
 
-      case CallHandler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do
-        {:ok, wire_sdp} ->
-          push(cookie, %{result: "ok", sdp: wire_sdp}, state)
+    with {:sdp, {:ok, answer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
+         fields = %{to_tag: to_tag, from_answerer_sdp: answer_sdp},
+         {:ok, wire_sdp} <- CallHandler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do
+      push(cookie, %{result: "ok", sdp: wire_sdp}, state)
+    else
+      {:sdp, {:error, reason}} ->
+        handle_sdp_parsing_error(reason, cookie, cmd, state)
 
-        {:error, reason} when reason in [:unknown, :late] ->
-          Logger.warning("answer not pending: #{inspect(reason)}")
-          push_error(cookie, "unknown call", state)
+      {:error, reason} when reason in [:unknown, :late] ->
+        Logger.warning("answer not pending: #{inspect(reason)}")
+        push_error(cookie, "unknown call", state)
 
-        {:error, reason} ->
-          Logger.error("handler answer failed: #{inspect(reason)}")
-          push_error(cookie, "handler answer failed", state)
-      end
-    end)
+      {:error, reason} ->
+        Logger.error("handler answer failed: #{inspect(reason)}")
+        push_error(cookie, "handler answer failed", state)
+    end
   end
 
   defp dispatch("delete", cookie, cmd, state) do
@@ -122,15 +118,9 @@ defmodule ExKamailio.WebSocket do
     push_error(cookie, "unsupported", state)
   end
 
-  defp with_sdp(cookie, cmd, state, fun) do
-    case parse_sdp(Map.get(cmd, "sdp")) do
-      {:ok, sdp} ->
-        fun.(sdp)
-
-      {:error, reason} ->
-        Logger.error("#{cmd["command"]} SDP parse failed: #{inspect(reason)}")
-        push_error(cookie, "invalid sdp", state)
-    end
+  defp handle_sdp_parsing_error(error, cookie, cmd, state) do
+    Logger.error("#{cmd["command"]} SDP parse failed: #{inspect(error)}")
+    push_error(cookie, "invalid sdp", state)
   end
 
   defp parse_sdp(nil), do: {:error, :no_sdp}
