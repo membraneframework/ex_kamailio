@@ -67,10 +67,11 @@ defmodule ExKamailio.CallHandler do
   running `c:handle_delete/2`). Keep slow work out of callbacks; if you raise
   `:callback_timeout`, raise `rtpengine_tout_ms` with it.
 
-  The 200 ms default gap assumes Kamailio and ex_kamailio share a host. If they
-  run on different machines and you worry that 200 ms is not enough, it might be
-  a good idea to widen this gap: raise `rtpengine_tout_ms`, lower
-  `:callback_timeout`, or both.
+  The 200 ms gap between `:callback_timeout` and `rtpengine_tout_ms` has to
+  cover the round-trip between the two nodes plus serialization, so Kamailio
+  still hears back before it gives up. Over loopback that is negligible; across
+  a network it is not, so if you suspect 200 ms is too tight, widen the gap:
+  raise `rtpengine_tout_ms`, lower `:callback_timeout`, or both.
   """
 
   alias ExKamailio.Session
