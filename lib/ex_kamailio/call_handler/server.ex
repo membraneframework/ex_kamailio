@@ -60,6 +60,7 @@ defmodule ExKamailio.CallHandler.Server do
       {:error, {:down, reason}}
   end
 
+  @spec start_link({String.t(), String.t() | nil, module(), keyword()}) :: GenServer.on_start()
   def start_link({call_id, _from_tag, _impl, _opts} = arg) do
     GenServer.start_link(__MODULE__, arg, name: via(call_id))
   end
@@ -67,16 +68,6 @@ defmodule ExKamailio.CallHandler.Server do
   defp via(call_id), do: {:via, Registry, {ConstantsAndVariables.call_registry(), call_id}}
 
   @impl true
-  @spec init({any(), any(), atom(), any()}) ::
-          {:ok,
-           %{
-             call_id: any(),
-             impl: atom(),
-             inner_state: any(),
-             session: nil,
-             timeout: any(),
-             timer_ref: nil
-           }}
   def init({call_id, from_tag, impl, impl_opts}) do
     {:ok, inner_state} = impl.init(%Session{call_id: call_id, from_tag: from_tag}, impl_opts)
 

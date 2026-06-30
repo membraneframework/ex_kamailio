@@ -9,6 +9,7 @@ defmodule ExKamailio.WebSocketTest.Reply do
        c=IN IP4 192.0.2.1\r
        a=sendrecv\r
        """)
+  @spec sdp() :: ExSDP.t()
   def sdp, do: @sdp
 end
 

@@ -1,12 +1,16 @@
 defmodule ExKamailio.ConstantsAndVariables do
   @moduledoc false
 
+  @spec call_registry() :: module()
   def call_registry, do: ExKamailio.CallRegistry
 
+  @spec call_supervisor() :: module()
   def call_supervisor, do: ExKamailio.CallSupervisor
 
+  @spec ws_port() :: :inet.port_number()
   def ws_port, do: Application.fetch_env!(:ex_kamailio, :ws_port)
 
+  @spec call_handler() :: {module(), keyword()}
   def call_handler do
     case Application.fetch_env!(:ex_kamailio, :call_handler) do
       {mod, opts} -> {mod, opts}
@@ -14,8 +18,10 @@ defmodule ExKamailio.ConstantsAndVariables do
     end
   end
 
+  @spec idle_timeout() :: timeout()
   def idle_timeout, do: Application.get_env(:ex_kamailio, :idle_timeout, :timer.minutes(30))
 
+  @spec callback_timeout() :: timeout()
   def callback_timeout,
     do: Application.get_env(:ex_kamailio, :callback_timeout, 800)
 end
