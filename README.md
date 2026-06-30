@@ -13,7 +13,7 @@ the media.
 
 Kamailio is widely deployed because few open-source alternatives can
 handle high-volume SIP signaling efficiently. But integrating it with an
-Elixir media stack normally requires a lot of glue. `ex_kamailio`
+Elixir media stack normally requires a lot of glue code. `ex_kamailio`
 collapses that glue into one behaviour you implement.
 
 One of the library's goals is to make it easy to integrate [Membrane][membrane]
@@ -134,18 +134,18 @@ scenario you might run into. When it falls short, treat it as a starting
 point, copy it into your project and tweak it (add modules, routing logic,
 whatever you need) as you go.
 
-It takes its connection details from the environment:
+It takes its connection details from the following environment variables:
 
 - `RTPENGINE_SOCK` — the `ng` control socket of your `ex_kamailio` app, as a
   WebSocket URL. Use `ws://127.0.0.1:4003` when Kamailio shares the host's
   network (loopback), or `ws://<name>:4003` when it reaches the app by DNS
   (e.g. a Docker service name).
 - `ADVERTISE_IP` — the address peers use to reach Kamailio. Only consulted in
-  LAN mode (below); leave it unset otherwise.
+  public mode (below); leave it unset otherwise.
 
 By default Kamailio binds UDP `0.0.0.0:5060` and advertises that bind address.
 That breaks once peers aren't on the same host, because in-dialog requests
-(BYE/ACK) get pointed back at `0.0.0.0`. Start Kamailio with `-A LAN_MODE` to
+(BYE/ACK) get pointed back at `0.0.0.0`. Start Kamailio with `-A PUBLIC_MODE` to
 instead advertise `ADVERTISE_IP`, the routable address you set above.
 
 ## Status

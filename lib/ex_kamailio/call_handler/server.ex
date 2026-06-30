@@ -17,7 +17,9 @@ defmodule ExKamailio.CallHandler.Server do
 
   alias ExKamailio.{ConstantsAndVariables, Session}
 
-  @spec start_call(String.t(), String.t() | nil, module(), keyword()) ::
+  @type call_id :: String.t()
+
+  @spec start_call(call_id(), String.t() | nil, module(), keyword()) ::
           {:ok, pid()} | {:error, term()}
   def start_call(call_id, from_tag, impl, impl_opts) do
     spec = %{
@@ -34,15 +36,15 @@ defmodule ExKamailio.CallHandler.Server do
     end
   end
 
-  @spec call_offer(String.t(), Session.t()) :: {:ok, binary()} | {:error, term()}
+  @spec call_offer(call_id(), Session.t()) :: {:ok, binary()} | {:error, term()}
   def call_offer(call_id, session),
     do: request(call_id, {__MODULE__, :offer, session})
 
-  @spec call_answer(String.t(), map()) :: {:ok, binary()} | {:error, term()}
+  @spec call_answer(call_id(), map()) :: {:ok, binary()} | {:error, term()}
   def call_answer(call_id, answer_fields),
     do: request(call_id, {__MODULE__, :answer, answer_fields})
 
-  @spec call_delete(String.t()) :: :ok | {:error, term()}
+  @spec call_delete(call_id()) :: :ok | {:error, term()}
   def call_delete(call_id),
     do: request(call_id, {__MODULE__, :delete})
 
@@ -60,7 +62,7 @@ defmodule ExKamailio.CallHandler.Server do
       {:error, {:down, reason}}
   end
 
-  @spec start_link({String.t(), String.t() | nil, module(), keyword()}) :: GenServer.on_start()
+  @spec start_link({call_id(), String.t() | nil, module(), keyword()}) :: GenServer.on_start()
   def start_link({call_id, _from_tag, _impl, _opts} = arg) do
     GenServer.start_link(__MODULE__, arg, name: via(call_id))
   end
