@@ -49,9 +49,9 @@ defmodule ExKamailio.CallHandler do
   Every callback gets the session, filled in as the call progresses with the
   SDPs and call metadata accumulated so far.
 
-  A retransmitted `offer` or `answer` reuses the existing call process and
-  replays the reply already computed for it, so a callback runs once per
-  distinct exchange even when Kamailio repeats the command.
+  When Kamailio retransmits an `offer` or `answer`, sending the same SDP again,
+  the call process replies with the SDP its callback returned the first time and
+  does not run `c:handle_offer/3` or `c:handle_answer/3` again.
 
   ## Optional callbacks
 

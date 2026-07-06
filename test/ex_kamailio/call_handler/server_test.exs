@@ -28,7 +28,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   defp start_call(call_id, from_tag, impl, impl_opts) do
-    CallHandler.Server.start_call(%{
+    CallHandler.Server.start(%{
       call_id: call_id,
       from_tag: from_tag,
       impl: impl,

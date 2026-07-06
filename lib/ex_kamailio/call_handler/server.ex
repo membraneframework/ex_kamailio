@@ -26,8 +26,8 @@ defmodule ExKamailio.CallHandler.Server do
           impl_opts: keyword()
         }
 
-  @spec start_call(call_spec()) :: {:ok, pid()} | {:error, term()}
-  def start_call(%{call_id: _call_id} = call_spec) do
+  @spec start(call_spec()) :: {:ok, pid()} | {:error, term()}
+  def start(call_spec) do
     spec = %{
       id: __MODULE__,
       start: {__MODULE__, :start_link, [call_spec]},
