@@ -16,11 +16,10 @@ handle high-volume SIP signaling efficiently. But integrating it with an
 Elixir media stack normally requires a lot of glue code. `ex_kamailio`
 collapses that glue into one behaviour you implement.
 
-One of the library's goals is to make it easy to integrate [Membrane][membrane]
-into services built on SIP and Kamailio. The package carries no Membrane
-dependency itself, but it's designed to make plugging a Membrane pipeline
-between two peers as easy as possible. You can also use it in solutions that
-don't involve Membrane at all — `ex_kamailio` never assumes it.
+One of the library's goals is to make it easy to put a [Membrane][membrane]
+pipeline between two SIP peers, though it carries no Membrane dependency itself
+and never assumes one. It works just as well in setups that don't involve
+Membrane at all.
 
 ## Installation
 
@@ -52,8 +51,8 @@ config :ex_kamailio,
 ```
 
 `ex_kamailio` is a pure SDP shuttle: it owns no media ports and picks no
-codecs. Your handler can bind its own sockets and advertise them in the 
-SDP it returns. 
+codecs. Your handler can bind its own sockets and advertise them in the
+SDP it returns.
 
 ## Writing an `ExKamailio.CallHandler` implementation
 
@@ -98,7 +97,7 @@ The peers are named by their RFC 3264 roles: **offerer** proposes SDP,
    WebSocket as an `offer` command.
 3. `ex_kamailio` parses the SDP, spawns a new call handler, and calls
    `c:ExKamailio.CallHandler.handle_offer/3`. Your implementation returns an
-   `%ExSDP{}` struct — the SDP offer for the answerer (Peer B).
+   `%ExSDP{}` struct: the SDP offer for the answerer (Peer B).
 4. `ex_kamailio` sends that SDP back to Kamailio, which puts it into the
    `INVITE` forwarded to the answerer.
 5. Peer B replies `200 OK` + SDP. Kamailio forwards it as an `answer`
@@ -111,8 +110,8 @@ The peers are named by their RFC 3264 roles: **offerer** proposes SDP,
 
 ## Idle calls
 
-A call normally ends when Kamailio sends `delete`. Should that never arrive —
-a crashed peer, a lost `BYE` — the call process would otherwise linger forever.
+A call normally ends when Kamailio sends `delete`. Should that never arrive
+(a crashed peer, a lost `BYE`), the call process would otherwise linger forever.
 To guard against this, each call runs an idle timer: when no command arrives
 for `:idle_timeout` (default 30 min), `c:ExKamailio.CallHandler.handle_idle/2`
 fires. Its default returns `{:stop, state}`, which runs `handle_delete/2` and
@@ -155,7 +154,7 @@ commands; `update` and `query` are not yet covered.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Portions derive from the ex_media project by
+MIT. See [LICENSE](LICENSE). Portions derive from the ex_media project by
 Javier Gallart / BTS, used with permission.
 
 ## Authors

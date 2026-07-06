@@ -4,7 +4,7 @@ defmodule ExKamailio.CallHandler do
 
   Implement this to plug your media-handling logic into ex_kamailio. The library
   handles the rtpengine protocol and stays a pure SDP shuttle: it allocates no media
-  ports and picks no codecs. Your handler owns the media — it binds its own
+  ports and picks no codecs. Your handler owns the media: it binds its own
   sockets, advertises them in the SDP it returns, and decides what to do with the
   stream (bridge it through Membrane, record, forward).
 
@@ -24,7 +24,8 @@ defmodule ExKamailio.CallHandler do
   `use ExKamailio.CallHandler` supplies overridable defaults for
   `c:handle_delete/2`, `c:handle_idle/2` and `c:handle_info/3`, so an
   implementation defines `c:init/2`, `c:handle_offer/3` and `c:handle_answer/3`.
-  Register it in config — bare, or `{module, opts}` to pass options to `c:init/2`:
+  Register it in config, either bare or as `{module, opts}` to pass options to
+  `c:init/2`:
 
       config :ex_kamailio, call_handler: MyApp.KamailioHandler
 
@@ -32,8 +33,8 @@ defmodule ExKamailio.CallHandler do
 
   Kamailio relays each SDP exchange as an rtpengine command, in a fixed order:
   `offer`, then `answer` (either may be retransmitted), then `delete`. Peers are
-  named by their RFC 3264 roles — the **offerer** proposes SDP, the **answerer**
-  responds; in the initial `INVITE` (the only exchange implemented so far) that's
+  named by their RFC 3264 roles: the **offerer** proposes SDP, the **answerer**
+  responds. In the initial `INVITE` (the only exchange implemented so far) that's
   caller and callee.
 
   1. `c:init/2` — seed the call's state.
@@ -45,8 +46,8 @@ defmodule ExKamailio.CallHandler do
   4. `c:handle_delete/2` — Kamailio tore the call down (`BYE`/`CANCEL`); release
      what you allocated.
 
-  Every callback gets the session, filled in as the call progresses — the SDPs
-  and call metadata accumulated so far.
+  Every callback gets the session, filled in as the call progresses with the
+  SDPs and call metadata accumulated so far.
 
   A retransmitted `offer` or `answer` reuses the existing call process and
   replays the reply already computed for it, so a callback runs once per
@@ -55,18 +56,18 @@ defmodule ExKamailio.CallHandler do
   ## Optional callbacks
 
     * `c:handle_info/3` — handle plain messages sent to the call process (e.g. a
-      `Membrane.Pipeline` reporting back). The `use` default logs the message at
-      debug level and ignores it; override it to react to such messages.
+      `Membrane.Pipeline` reporting back). By default it logs the message at
+      debug level; override it to react to such messages.
     * `c:handle_idle/2` — called when no command arrives for `:idle_timeout`
       (default 30 min). The `use` default returns `{:stop, state}` to reap the call;
-      return `{:ok, state}` to keep it. Reaping is **local only** — it frees this
+      return `{:ok, state}` to keep it. Reaping is **local only**: it frees this
       call's process but does not end the SIP dialog.
 
   ## Callback latency budget
 
   Kamailio blocks a SIP worker waiting for each reply and, on timeout
   (`rtpengine_tout_ms`, default 1000 ms), disables the node for
-  `rtpengine_disable_tout` (default 60 s) — failing every call meanwhile. So
+  `rtpengine_disable_tout` (default 60 s), failing every call meanwhile. So
   ex_kamailio waits at most `:callback_timeout` (default 800 ms) for a
   callback, then returns an in-time error and tears that one call down (still
   running `c:handle_delete/2`). Keep slow work out of callbacks; if you increase
@@ -82,8 +83,8 @@ defmodule ExKamailio.CallHandler do
   alias ExKamailio.Session
 
   @doc """
-  Declares the behaviour and injects overridable defaults for `handle_delete/2`
-  and `handle_idle/2`. See the module doc.
+  Declares the behaviour and injects overridable defaults for `handle_delete/2`,
+  `handle_idle/2` and `handle_info/3`. See the module doc.
   """
   defmacro __using__(_opts) do
     quote do
