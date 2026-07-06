@@ -15,7 +15,7 @@ defmodule ExKamailio.CallHandler.Server do
   use GenServer
   require Logger
 
-  alias ExKamailio.{ConstantsAndVariables, Session}
+  alias ExKamailio.{ConstantsAndConfig, Session}
 
   @type call_id :: String.t()
 
@@ -28,7 +28,7 @@ defmodule ExKamailio.CallHandler.Server do
       restart: :temporary
     }
 
-    ConstantsAndVariables.call_supervisor()
+    ConstantsAndConfig.call_supervisor()
     |> DynamicSupervisor.start_child(spec)
     |> case do
       {:error, {:already_started, pid}} -> {:ok, pid}
@@ -49,7 +49,7 @@ defmodule ExKamailio.CallHandler.Server do
     do: request(call_id, {__MODULE__, :delete})
 
   defp request(call_id, request) do
-    GenServer.call(via(call_id), request, ConstantsAndVariables.callback_timeout())
+    GenServer.call(via(call_id), request, ConstantsAndConfig.callback_timeout())
   catch
     :exit, {:timeout, _call_details} ->
       GenServer.cast(via(call_id), {__MODULE__, :abort})
@@ -67,7 +67,7 @@ defmodule ExKamailio.CallHandler.Server do
     GenServer.start_link(__MODULE__, arg, name: via(call_id))
   end
 
-  defp via(call_id), do: {:via, Registry, {ConstantsAndVariables.call_registry(), call_id}}
+  defp via(call_id), do: {:via, Registry, {ConstantsAndConfig.call_registry(), call_id}}
 
   @impl true
   def init({call_id, from_tag, impl, impl_opts}) do
@@ -78,7 +78,7 @@ defmodule ExKamailio.CallHandler.Server do
       impl: impl,
       inner_state: inner_state,
       session: nil,
-      timeout: ConstantsAndVariables.idle_timeout(),
+      timeout: ConstantsAndConfig.idle_timeout(),
       timer_ref: nil
     }
 

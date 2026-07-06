@@ -16,12 +16,12 @@ defmodule ExKamailio.CallHandler.ServerTest do
 
   setup do
     start_supervised!(
-      {Registry, keys: :unique, name: ExKamailio.ConstantsAndVariables.call_registry()}
+      {Registry, keys: :unique, name: ExKamailio.ConstantsAndConfig.call_registry()}
     )
 
     start_supervised!(
       {DynamicSupervisor,
-       name: ExKamailio.ConstantsAndVariables.call_supervisor(), strategy: :one_for_one}
+       name: ExKamailio.ConstantsAndConfig.call_supervisor(), strategy: :one_for_one}
     )
 
     :ok
@@ -36,7 +36,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   defp registered?(call_id),
-    do: Registry.lookup(ExKamailio.ConstantsAndVariables.call_registry(), call_id) != []
+    do: Registry.lookup(ExKamailio.ConstantsAndConfig.call_registry(), call_id) != []
 
   # Registry unregisters on its own receipt of the call process's :DOWN, which
   # lags GenServer.call returning — poll rather than assume it's immediate.

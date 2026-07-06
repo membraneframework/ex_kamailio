@@ -64,14 +64,14 @@ defmodule ExKamailio.CallHandler do
   `rtpengine_disable_tout` (default 60 s) — failing every call meanwhile. So
   ex_kamailio waits at most `:callback_timeout` (default 800 ms) for a
   callback, then returns an in-time error and tears that one call down (still
-  running `c:handle_delete/2`). Keep slow work out of callbacks; if you raise
-  `:callback_timeout`, raise `rtpengine_tout_ms` with it.
+  running `c:handle_delete/2`). Keep slow work out of callbacks; if you increase
+  `:callback_timeout`, increase `rtpengine_tout_ms` with it.
 
   The 200 ms gap between `:callback_timeout` and `rtpengine_tout_ms` has to
   cover the round-trip between the two nodes plus serialization, so Kamailio
   still hears back before it gives up. Over loopback that is negligible; across
   a network it is not, so if you suspect 200 ms is too tight, widen the gap:
-  raise `rtpengine_tout_ms`, lower `:callback_timeout`, or both.
+  increase `rtpengine_tout_ms`, lower `:callback_timeout`, or both.
   """
 
   alias ExKamailio.Session
