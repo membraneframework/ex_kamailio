@@ -22,9 +22,9 @@ defmodule ExKamailio.CallHandler do
       end
 
   `use ExKamailio.CallHandler` supplies overridable defaults for
-  `c:handle_delete/2` and `c:handle_idle/2`, so an implementation defines `c:init/2`,
-  `c:handle_offer/3` and `c:handle_answer/3`. Register it in config — bare, or
-  `{module, opts}` to pass options to `c:init/2`:
+  `c:handle_delete/2`, `c:handle_idle/2` and `c:handle_info/3`, so an
+  implementation defines `c:init/2`, `c:handle_offer/3` and `c:handle_answer/3`.
+  Register it in config — bare, or `{module, opts}` to pass options to `c:init/2`:
 
       config :ex_kamailio, call_handler: MyApp.KamailioHandler
 
@@ -48,10 +48,15 @@ defmodule ExKamailio.CallHandler do
   Every callback gets the session, filled in as the call progresses — the SDPs
   and call metadata accumulated so far.
 
+  A retransmitted `offer` or `answer` reuses the existing call process and
+  replays the reply already computed for it, so a callback runs once per
+  distinct exchange even when Kamailio repeats the command.
+
   ## Optional callbacks
 
-    * `c:handle_info/3` — handle plain messages in the call process (e.g. a
-      `Membrane.Pipeline` reporting back). Without it, a stray message crashes the call.
+    * `c:handle_info/3` — handle plain messages sent to the call process (e.g. a
+      `Membrane.Pipeline` reporting back). The `use` default logs the message at
+      debug level and ignores it; override it to react to such messages.
     * `c:handle_idle/2` — called when no command arrives for `:idle_timeout`
       (default 30 min). The `use` default returns `{:stop, state}` to reap the call;
       return `{:ok, state}` to keep it. Reaping is **local only** — it frees this
@@ -83,14 +88,21 @@ defmodule ExKamailio.CallHandler do
   defmacro __using__(_opts) do
     quote do
       @behaviour unquote(__MODULE__)
+      require Logger
 
       @impl true
-      def handle_delete(_session, state), do: {:ok, state}
+      def handle_delete(_session, _state), do: :ok
 
       @impl true
       def handle_idle(_session, state), do: {:stop, state}
 
-      defoverridable handle_delete: 2, handle_idle: 2
+      @impl true
+      def handle_info(message, _session, state) do
+        Logger.debug("unhandled message #{inspect(message)}")
+        {:ok, state}
+      end
+
+      defoverridable handle_delete: 2, handle_idle: 2, handle_info: 3
     end
   end
 
@@ -109,7 +121,7 @@ defmodule ExKamailio.CallHandler do
   @callback handle_idle(Session.t(), state()) ::
               {:ok, state()} | {:stop, state()}
 
-  @callback handle_delete(Session.t(), state()) :: {:ok, state()}
+  @callback handle_delete(Session.t(), state()) :: :ok
 
-  @optional_callbacks handle_info: 3
+  @optional_callbacks handle_info: 3, handle_idle: 2, handle_delete: 2
 end

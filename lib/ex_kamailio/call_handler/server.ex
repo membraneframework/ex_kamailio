@@ -19,12 +19,18 @@ defmodule ExKamailio.CallHandler.Server do
 
   @type call_id :: String.t()
 
-  @spec start_call(call_id(), String.t() | nil, module(), keyword()) ::
-          {:ok, pid()} | {:error, term()}
-  def start_call(call_id, from_tag, impl, impl_opts) do
+  @type call_spec :: %{
+          call_id: call_id(),
+          from_tag: String.t() | nil,
+          impl: module(),
+          impl_opts: keyword()
+        }
+
+  @spec start_call(call_spec()) :: {:ok, pid()} | {:error, term()}
+  def start_call(%{call_id: _call_id} = call_spec) do
     spec = %{
       id: __MODULE__,
-      start: {__MODULE__, :start_link, [{call_id, from_tag, impl, impl_opts}]},
+      start: {__MODULE__, :start_link, [call_spec]},
       restart: :temporary
     }
 
@@ -62,15 +68,15 @@ defmodule ExKamailio.CallHandler.Server do
       {:error, {:down, reason}}
   end
 
-  @spec start_link({call_id(), String.t() | nil, module(), keyword()}) :: GenServer.on_start()
-  def start_link({call_id, _from_tag, _impl, _opts} = arg) do
-    GenServer.start_link(__MODULE__, arg, name: via(call_id))
+  @spec start_link(call_spec()) :: GenServer.on_start()
+  def start_link(%{call_id: call_id} = call_spec) do
+    GenServer.start_link(__MODULE__, call_spec, name: via(call_id))
   end
 
   defp via(call_id), do: {:via, Registry, {ConstantsAndConfig.call_registry(), call_id}}
 
   @impl true
-  def init({call_id, from_tag, impl, impl_opts}) do
+  def init(%{call_id: call_id, from_tag: from_tag, impl: impl, impl_opts: impl_opts}) do
     {:ok, inner_state} = impl.init(%Session{call_id: call_id, from_tag: from_tag}, impl_opts)
 
     state = %{
@@ -164,8 +170,7 @@ defmodule ExKamailio.CallHandler.Server do
   defp run_delete(%{session: nil}), do: :ok
 
   defp run_delete(state) do
-    {:ok, _inner_state} = state.impl.handle_delete(state.session, state.inner_state)
-    :ok
+    :ok = state.impl.handle_delete(state.session, state.inner_state)
   end
 
   defp arm_timer(state) do

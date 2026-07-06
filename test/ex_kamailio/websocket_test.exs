@@ -42,7 +42,7 @@ defmodule ExKamailio.WebSocketTest do
     @impl true
     def handle_delete(session, state) do
       send(state.calls, {:delete_called, session})
-      {:ok, state}
+      :ok
     end
   end
 
@@ -221,7 +221,7 @@ defmodule ExKamailio.WebSocketTest do
     @impl true
     def handle_delete(session, state) do
       send(state.report_to, {:deleted, session.call_id, state.mark})
-      {:ok, state}
+      :ok
     end
   end
 

@@ -79,7 +79,7 @@ defmodule MyApp.KamailioHandler do
   @impl true
   def handle_delete(_session, state) do
     MyApp.MediaPipeline.terminate(state.pipeline)
-    {:ok, state}
+    :ok
   end
 end
 ```
@@ -153,16 +153,22 @@ instead advertise `ADVERTISE_IP`, the routable address you set above.
 Implements the `offer` / `answer` / `delete` / `ping` rtpengine
 commands; `update` and `query` are not yet covered.
 
-## Acknowledgements
-
-Originally extracted from a Kamailio integration written by
-**Javier Gallart (BTS)**, who graciously permitted relicensing the
-relevant parts as open source.
-
 ## License
 
 MIT — see [LICENSE](LICENSE). Portions derive from the ex_media project by
 Javier Gallart / BTS, used with permission.
+
+## Authors
+
+`ex_kamailio` is created by Software Mansion.
+
+Since 2012 [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=ex_kamailio) is a software agency with experience in building web and mobile apps as well as complex multimedia solutions. We are Core React Native Contributors and experts in live streaming and broadcasting technologies. We can help you build your next dream product – [Hire us](https://swmansion.com/contact/projects).
+
+[![Software Mansion](https://logo.swmansion.com/logo?color=white&variant=desktop&width=200&tag=ex_kamailio-github)](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=ex_kamailio)
+
+`ex_kamailio` was originally extracted from a Kamailio integration written by
+**Javier Gallart (BTS)**, who graciously permitted relicensing the relevant
+parts as open source.
 
 [kamailio]: https://www.kamailio.org/
 [membrane]: https://membrane.stream/

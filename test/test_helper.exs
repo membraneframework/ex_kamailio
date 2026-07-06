@@ -30,7 +30,7 @@ defmodule ExKamailio.TestHandlers do
     @impl true
     def handle_delete(session, st) do
       send(st.report_to, {:delete, session.call_id})
-      {:ok, st}
+      :ok
     end
 
     @impl true
@@ -93,7 +93,7 @@ defmodule ExKamailio.TestHandlers do
     @impl true
     def handle_delete(session, st) do
       send(st.report_to, {:delete, session.call_id})
-      {:ok, st}
+      :ok
     end
   end
 

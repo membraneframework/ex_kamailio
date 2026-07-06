@@ -43,7 +43,7 @@ defmodule ExKamailio.WebSocket do
 
   @impl true
   def terminate(reason, _state) do
-    Logger.info("WS closing: #{inspect(reason)}")
+    Logger.debug("WS closing: #{inspect(reason)}")
     :ok
   end
 
@@ -63,7 +63,12 @@ defmodule ExKamailio.WebSocket do
     with {:sdp, {:ok, offer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
          session = %{session | from_offerer_sdp: offer_sdp},
          {:ok, _pid} <-
-           CallHandler.Server.start_call(call_id, from_tag, state.handler_mod, state.handler_opts),
+           CallHandler.Server.start_call(%{
+             call_id: call_id,
+             from_tag: from_tag,
+             impl: state.handler_mod,
+             impl_opts: state.handler_opts
+           }),
          {:ok, wire_sdp} <- CallHandler.Server.call_offer(call_id, session) do
       push(cookie, %{result: "ok", sdp: wire_sdp}, state)
     else
