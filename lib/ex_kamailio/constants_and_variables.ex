@@ -1,4 +1,4 @@
-defmodule ExKamailio.ConstantsAndVariables do
+defmodule ExKamailio.ConstantsAndConfig do
   @moduledoc false
 
   @spec call_registry() :: module()
