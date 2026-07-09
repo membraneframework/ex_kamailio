@@ -199,6 +199,15 @@ defmodule ExKamailio.WebSocketTest do
       assert_receive {:delete_called, _}
       assert eventually_unregistered("call-4")
     end
+
+    test "delete of an unknown call still replies ok (idempotent teardown)", %{state: state} do
+      msg = frame("aaaaa", %{command: "delete", "call-id": "never-seen"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "ok"
+    end
   end
 
   defmodule MarkingHandler do
@@ -314,6 +323,17 @@ defmodule ExKamailio.WebSocketTest do
                WebSocket.handle_in({msg, [opcode: :text]}, state)
 
       assert decode!(reply)["result"] == "error"
+    end
+
+    test "rejects an offer with no call-id instead of routing it to a shared call", %{
+      state: state
+    } do
+      msg = frame("aaaaa", %{command: "offer", "from-tag": "f1", sdp: @offer_sdp})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply) == %{"result" => "error", "error-reason" => "missing call-id"}
     end
 
     test "rejects an offer with an unparseable SDP body, without starting a call",

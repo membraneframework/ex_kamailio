@@ -88,7 +88,7 @@ defmodule ExKamailio.CallHandler.Server do
       timer_ref: nil
     }
 
-    {:ok, state}
+    {:ok, arm_inactivity_timer(state)}
   end
 
   @impl true
@@ -106,7 +106,7 @@ defmodule ExKamailio.CallHandler.Server do
 
     session = %{session | to_answerer_sdp: sdp}
     state = %{state | session: session, inner_state: inner_state}
-    {:reply, {:ok, to_string(sdp)}, arm_timer(state)}
+    {:reply, {:ok, to_string(sdp)}, arm_inactivity_timer(state)}
   end
 
   def handle_call(
@@ -129,7 +129,7 @@ defmodule ExKamailio.CallHandler.Server do
 
     session = %{session | to_offerer_sdp: sdp}
     state = %{state | session: session, inner_state: inner_state}
-    {:reply, {:ok, to_string(sdp)}, arm_timer(state)}
+    {:reply, {:ok, to_string(sdp)}, arm_inactivity_timer(state)}
   end
 
   def handle_call({__MODULE__, :answer, _fields}, _from, state) do
@@ -158,7 +158,7 @@ defmodule ExKamailio.CallHandler.Server do
         {:stop, :normal, state}
 
       {:ok, inner_state} ->
-        {:noreply, arm_timer(%{state | inner_state: inner_state})}
+        {:noreply, arm_inactivity_timer(%{state | inner_state: inner_state})}
     end
   end
 
@@ -173,8 +173,20 @@ defmodule ExKamailio.CallHandler.Server do
     :ok = state.impl.handle_delete(state.session, state.inner_state)
   end
 
-  defp arm_timer(state) do
-    if state.timer_ref, do: Process.cancel_timer(state.timer_ref)
+  defp arm_inactivity_timer(state) do
+    flush_fired_timer(state.timer_ref)
     %{state | timer_ref: Process.send_after(self(), {__MODULE__, :idle}, state.timeout)}
+  end
+
+  defp flush_fired_timer(nil), do: :ok
+
+  defp flush_fired_timer(timer_ref) do
+    if Process.cancel_timer(timer_ref) == false do
+      receive do
+        {__MODULE__, :idle} -> :ok
+      after
+        0 -> :ok
+      end
+    end
   end
 end

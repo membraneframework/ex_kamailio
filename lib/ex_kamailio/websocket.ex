@@ -52,15 +52,11 @@ defmodule ExKamailio.WebSocket do
   end
 
   defp dispatch("offer", cookie, cmd, state) do
-    call_id = fetch_id(cmd, "call-id")
     from_tag = fetch_id(cmd, "from-tag")
 
-    session = %Session{
-      call_id: call_id,
-      from_tag: from_tag
-    }
-
-    with {:sdp, {:ok, offer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
+    with {:id, call_id} when is_binary(call_id) <- {:id, fetch_id(cmd, "call-id")},
+         session = %Session{call_id: call_id, from_tag: from_tag},
+         {:sdp, {:ok, offer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
          session = %{session | from_offerer_sdp: offer_sdp},
          {:ok, _pid} <-
            CallHandler.Server.start(%{
@@ -72,6 +68,9 @@ defmodule ExKamailio.WebSocket do
          {:ok, wire_sdp} <- CallHandler.Server.call_offer(call_id, session) do
       push(cookie, %{result: "ok", sdp: wire_sdp}, state)
     else
+      {:id, nil} ->
+        push_missing_call_id(cookie, state)
+
       {:sdp, {:error, reason}} ->
         handle_sdp_parsing_error(reason, cookie, cmd, state)
 
@@ -84,11 +83,15 @@ defmodule ExKamailio.WebSocket do
   defp dispatch("answer", cookie, cmd, state) do
     to_tag = fetch_id(cmd, "to-tag")
 
-    with {:sdp, {:ok, answer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
+    with {:id, call_id} when is_binary(call_id) <- {:id, fetch_id(cmd, "call-id")},
+         {:sdp, {:ok, answer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
          fields = %{to_tag: to_tag, from_answerer_sdp: answer_sdp},
-         {:ok, wire_sdp} <- CallHandler.Server.call_answer(fetch_id(cmd, "call-id"), fields) do
+         {:ok, wire_sdp} <- CallHandler.Server.call_answer(call_id, fields) do
       push(cookie, %{result: "ok", sdp: wire_sdp}, state)
     else
+      {:id, nil} ->
+        push_missing_call_id(cookie, state)
+
       {:sdp, {:error, reason}} ->
         handle_sdp_parsing_error(reason, cookie, cmd, state)
 
@@ -103,15 +106,12 @@ defmodule ExKamailio.WebSocket do
   end
 
   defp dispatch("delete", cookie, cmd, state) do
-    case CallHandler.Server.call_delete(fetch_id(cmd, "call-id")) do
-      :ok ->
-        push(cookie, %{result: "ok"}, state)
+    case fetch_id(cmd, "call-id") do
+      nil ->
+        push_missing_call_id(cookie, state)
 
-      {:error, :unknown} ->
-        push_error(cookie, "unknown call", state)
-
-      {:error, _down} ->
-        # Process already gone — the call is torn down, which is what delete wants.
+      call_id ->
+        CallHandler.Server.call_delete(call_id)
         push(cookie, %{result: "ok"}, state)
     end
   end
@@ -145,5 +145,10 @@ defmodule ExKamailio.WebSocket do
     push(cookie, %{"result" => "error", "error-reason" => reason}, state)
   end
 
-  defp fetch_id(cmd, key), do: Map.get(cmd, key, "unknown")
+  defp push_missing_call_id(cookie, state) do
+    Logger.warning("rtpengine command missing call-id")
+    push_error(cookie, "missing call-id", state)
+  end
+
+  defp fetch_id(cmd, key), do: Map.get(cmd, key)
 end

@@ -47,6 +47,17 @@ defmodule ExKamailio.CallHandler.ServerTest do
   defp registered?(call_id),
     do: Registry.lookup(ExKamailio.ConstantsAndConfig.call_registry(), call_id) != []
 
+  defp put_config(key, value) do
+    prev = Application.get_env(:ex_kamailio, key)
+    Application.put_env(:ex_kamailio, key, value)
+
+    on_exit(fn ->
+      if prev == nil,
+        do: Application.delete_env(:ex_kamailio, key),
+        else: Application.put_env(:ex_kamailio, key, prev)
+    end)
+  end
+
   # Registry unregisters on its own receipt of the call process's :DOWN, which
   # lags GenServer.call returning — poll rather than assume it's immediate.
   defp eventually_unregistered(call_id, tries \\ 50) do
@@ -128,9 +139,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "the default handle_idle reaps the call: runs delete then stops" do
-    prev = Application.get_env(:ex_kamailio, :idle_timeout)
-    Application.put_env(:ex_kamailio, :idle_timeout, 50)
-    on_exit(fn -> Application.put_env(:ex_kamailio, :idle_timeout, prev) end)
+    put_config(:idle_timeout, 50)
 
     {:ok, pid} = start_call("c5", "f-c5", ApiHandler, report_to: self())
     ref = Process.monitor(pid)
@@ -142,9 +151,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "a custom handle_idle returning {:ok, state} keeps the call alive" do
-    prev = Application.get_env(:ex_kamailio, :idle_timeout)
-    Application.put_env(:ex_kamailio, :idle_timeout, 50)
-    on_exit(fn -> Application.put_env(:ex_kamailio, :idle_timeout, prev) end)
+    put_config(:idle_timeout, 50)
 
     {:ok, _} = start_call("c6", "f-c6", ExtendHandler, report_to: self())
     {:ok, _} = CallHandler.Server.call_offer("c6", offer_session("c6"))
@@ -154,9 +161,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   test "an offer that misses the reply deadline errors in time, then the call tears down" do
-    prev = Application.get_env(:ex_kamailio, :callback_timeout)
-    Application.put_env(:ex_kamailio, :callback_timeout, 50)
-    on_exit(fn -> Application.put_env(:ex_kamailio, :callback_timeout, prev) end)
+    put_config(:callback_timeout, 50)
 
     {:ok, pid} = start_call("c8", "f-c8", SlowHandler, report_to: self())
     ref = Process.monitor(pid)

@@ -54,6 +54,10 @@ config :ex_kamailio,
 codecs. Your handler can bind its own sockets and advertise them in the
 SDP it returns.
 
+The WebSocket transport is plain `ws` (no TLS), so run Kamailio and
+`ex_kamailio` on the same host or a trusted private network, never exposing
+the port to the public internet.
+
 ## Writing an `ExKamailio.CallHandler` implementation
 
 ```elixir
