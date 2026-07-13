@@ -9,11 +9,11 @@ defmodule ExKamailio.WebSocket do
   @behaviour WebSock
   require Logger
 
-  alias ExKamailio.{CallHandler, ConstantsAndConfig, Session}
+  alias ExKamailio.{CallHandler, Config, Session}
 
   @impl true
   def init(_args) do
-    {handler_mod, handler_opts} = ConstantsAndConfig.call_handler()
+    {handler_mod, handler_opts} = Config.call_handler()
     {:ok, %{handler_mod: handler_mod, handler_opts: handler_opts}}
   end
 

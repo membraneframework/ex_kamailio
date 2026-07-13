@@ -9,6 +9,7 @@ defmodule ExKamailio.MixProject do
       app: :ex_kamailio,
       version: @version,
       elixir: "~> 1.17",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: description(),
@@ -25,6 +26,9 @@ defmodule ExKamailio.MixProject do
       mod: {ExKamailio.Application, []}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   defp deps do
     [

@@ -15,13 +15,10 @@ defmodule ExKamailio.CallHandler.ServerTest do
   }
 
   setup do
-    start_supervised!(
-      {Registry, keys: :unique, name: ExKamailio.ConstantsAndConfig.call_registry()}
-    )
+    start_supervised!({Registry, keys: :unique, name: ExKamailio.Config.call_registry()})
 
     start_supervised!(
-      {DynamicSupervisor,
-       name: ExKamailio.ConstantsAndConfig.call_supervisor(), strategy: :one_for_one}
+      {DynamicSupervisor, name: ExKamailio.Config.call_supervisor(), strategy: :one_for_one}
     )
 
     :ok
@@ -45,7 +42,7 @@ defmodule ExKamailio.CallHandler.ServerTest do
   end
 
   defp registered?(call_id),
-    do: Registry.lookup(ExKamailio.ConstantsAndConfig.call_registry(), call_id) != []
+    do: Registry.lookup(ExKamailio.Config.call_registry(), call_id) != []
 
   defp put_config(key, value) do
     prev = Application.get_env(:ex_kamailio, key)

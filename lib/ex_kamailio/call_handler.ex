@@ -15,7 +15,7 @@ defmodule ExKamailio.CallHandler do
         def init(_session, _opts), do: {:ok, %{}}
 
         @impl true
-        def handle_offer(from_offerrer_sdp, session, state), do: {:ok, to_answerer_sdp, state}
+        def handle_offer(from_offerer_sdp, session, state), do: {:ok, to_answerer_sdp, state}
 
         @impl true
         def handle_answer(from_answerer_sdp, session, state), do: {:ok, to_offerer_sdp, state}
