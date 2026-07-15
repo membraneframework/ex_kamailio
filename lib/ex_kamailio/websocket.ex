@@ -58,7 +58,7 @@ defmodule ExKamailio.WebSocket do
          session = %Session{call_id: call_id, from_tag: from_tag},
          {:sdp, {:ok, offer_sdp}} <- {:sdp, parse_sdp(Map.get(cmd, "sdp"))},
          session = %{session | from_offerer_sdp: offer_sdp},
-         {:ok, _pid} <-
+         {:ok, _pid} =
            CallHandler.Server.start(%{
              call_id: call_id,
              from_tag: from_tag,

@@ -29,6 +29,10 @@ defmodule ExKamailio.CallHandler do
 
       config :ex_kamailio, call_handler: MyApp.KamailioHandler
 
+  When `:call_handler` is unset, `ExKamailio.CallHandler.Default` is used: it
+  returns each peer's SDP unchanged so the app stays functional out of the box
+  without touching the media.
+
   ## Call flow
 
   Kamailio relays each SDP exchange as an rtpengine command, in a fixed order:

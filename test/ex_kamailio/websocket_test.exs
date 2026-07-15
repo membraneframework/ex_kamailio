@@ -215,6 +215,24 @@ defmodule ExKamailio.WebSocketTest do
     end
   end
 
+  describe "default handler" do
+    test "with no :call_handler configured, echoes the offerer's SDP (passthrough)" do
+      Application.delete_env(:ex_kamailio, :call_handler)
+      {:ok, state} = WebSocket.init([])
+
+      msg =
+        frame("aaaaa", %{command: "offer", "call-id": "def-1", "from-tag": "f1", sdp: @offer_sdp})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      decoded = decode!(reply)
+      assert decoded["result"] == "ok"
+      assert decoded["sdp"] =~ "m=audio 49170"
+      assert decoded["sdp"] =~ "192.168.1.10"
+    end
+  end
+
   defmodule MarkingHandler do
     use ExKamailio.CallHandler
 

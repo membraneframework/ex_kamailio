@@ -9,7 +9,7 @@ defmodule ExKamailio.Application do
     children = [
       {Registry, keys: :unique, name: Config.call_registry()},
       {DynamicSupervisor, name: Config.call_supervisor(), strategy: :one_for_one},
-      {Bandit, plug: ExKamailio.Router, scheme: :http, port: Config.ws_port()}
+      {Bandit, plug: ExKamailio.Router, scheme: :http, ip: Config.ws_ip(), port: Config.ws_port()}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: ExKamailio.Supervisor)
