@@ -1,0 +1,383 @@
+defmodule ExKamailio.WebSocketTest.Reply do
+  @moduledoc false
+  @sdp ExSDP.parse!("""
+       v=0\r
+       o=- 0 0 IN IP4 192.0.2.1\r
+       s=-\r
+       t=0 0\r
+       m=audio 30000 RTP/AVP 0 101\r
+       c=IN IP4 192.0.2.1\r
+       a=sendrecv\r
+       """)
+  @spec sdp() :: ExSDP.t()
+  def sdp, do: @sdp
+end
+
+defmodule ExKamailio.WebSocketTest do
+  use ExUnit.Case, async: false
+
+  alias ExKamailio.WebSocket
+
+  defmodule TestHandler do
+    use ExKamailio.CallHandler
+
+    alias ExKamailio.WebSocketTest.Reply
+
+    @impl true
+    def init(_session, opts), do: {:ok, %{calls: opts[:report_to] || self()}}
+
+    @impl true
+    def handle_offer(_offer, session, state) do
+      send(state.calls, {:offer_called, session})
+      {:ok, Reply.sdp(), state}
+    end
+
+    @impl true
+    def handle_answer(_answer, session, state) do
+      send(state.calls, {:answer_called, session})
+      {:ok, Reply.sdp(), state}
+    end
+
+    @impl true
+    def handle_delete(session, state) do
+      send(state.calls, {:delete_called, session})
+      :ok
+    end
+  end
+
+  @offer_sdp """
+  v=0\r
+  o=alice 1 1 IN IP4 192.168.1.10\r
+  s=-\r
+  c=IN IP4 192.168.1.10\r
+  t=0 0\r
+  m=audio 49170 RTP/AVP 0 101\r
+  a=sendrecv\r
+  """
+
+  setup do
+    prev_handler = Application.get_env(:ex_kamailio, :call_handler)
+
+    on_exit(fn ->
+      if prev_handler == nil,
+        do: Application.delete_env(:ex_kamailio, :call_handler),
+        else: Application.put_env(:ex_kamailio, :call_handler, prev_handler)
+    end)
+
+    Application.put_env(:ex_kamailio, :call_handler, {TestHandler, report_to: self()})
+
+    start_supervised!({Registry, keys: :unique, name: ExKamailio.Config.call_registry()})
+
+    start_supervised!(
+      {DynamicSupervisor, name: ExKamailio.Config.call_supervisor(), strategy: :one_for_one}
+    )
+
+    {:ok, state} = WebSocket.init([])
+    {:ok, state: state}
+  end
+
+  defp registered?(call_id),
+    do: Registry.lookup(ExKamailio.Config.call_registry(), call_id) != []
+
+  # Registry unregisters on its own receipt of the call process's :DOWN, which
+  # lags the command reply — poll rather than assume it's immediate.
+  defp eventually_unregistered(call_id, tries \\ 50) do
+    cond do
+      not registered?(call_id) -> true
+      tries == 0 -> false
+      true -> Process.sleep(5) && eventually_unregistered(call_id, tries - 1)
+    end
+  end
+
+  defp frame(cookie, payload) do
+    cookie <> " " <> Bento.encode!(payload)
+  end
+
+  defp decode!(<<_cookie::binary-size(5), " ", body::binary>>) do
+    {:ok, decoded} = Bento.decode(body)
+    decoded
+  end
+
+  describe "ping" do
+    test "responds with pong", %{state: state} do
+      msg = frame("aaaaa", %{command: "ping"})
+
+      assert {:push, {:text, reply}, _new_state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply) == %{"result" => "pong"}
+    end
+  end
+
+  describe "offer" do
+    test "invokes handler with parsed session and replies with the handler's SDP", %{state: state} do
+      msg =
+        frame("aaaaa", %{
+          command: "offer",
+          "call-id": "call-1",
+          "from-tag": "f1",
+          sdp: @offer_sdp
+        })
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      decoded = decode!(reply)
+      assert decoded["result"] == "ok"
+      assert is_binary(decoded["sdp"])
+      assert decoded["sdp"] =~ "RTP/AVP 0 101"
+      assert decoded["sdp"] =~ "m=audio 30000"
+
+      assert_receive {:offer_called, session}
+      assert session.call_id == "call-1"
+      assert session.from_tag == "f1"
+      assert %ExSDP{} = session.from_offerer_sdp
+    end
+  end
+
+  describe "answer" do
+    test "requires a prior offer", %{state: state} do
+      msg =
+        frame("aaaaa", %{
+          command: "answer",
+          "call-id": "no-such-call",
+          "to-tag": "t1",
+          sdp: @offer_sdp
+        })
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+    end
+
+    test "completes a full offer/answer round trip", %{state: state} do
+      offer_msg =
+        frame("aaaaa", %{
+          command: "offer",
+          "call-id": "call-3",
+          "from-tag": "f1",
+          sdp: @offer_sdp
+        })
+
+      {:push, _, state} = WebSocket.handle_in({offer_msg, [opcode: :text]}, state)
+
+      answer_msg =
+        frame("aaaab", %{
+          command: "answer",
+          "call-id": "call-3",
+          "to-tag": "t1",
+          sdp: @offer_sdp
+        })
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({answer_msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "ok"
+      assert_receive {:offer_called, _}
+      assert_receive {:answer_called, session}
+      assert session.to_tag == "t1"
+      assert %ExSDP{} = session.to_answerer_sdp
+    end
+  end
+
+  describe "delete" do
+    test "invokes handler.delete and drops the call process", %{state: state} do
+      offer_msg =
+        frame("aaaaa", %{
+          command: "offer",
+          "call-id": "call-4",
+          "from-tag": "f1",
+          sdp: @offer_sdp
+        })
+
+      {:push, _, state} = WebSocket.handle_in({offer_msg, [opcode: :text]}, state)
+
+      delete_msg = frame("aaaac", %{command: "delete", "call-id": "call-4"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({delete_msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "ok"
+      assert_receive {:offer_called, _}
+      assert_receive {:delete_called, _}
+      assert eventually_unregistered("call-4")
+    end
+
+    test "delete of an unknown call still replies ok (idempotent teardown)", %{state: state} do
+      msg = frame("aaaaa", %{command: "delete", "call-id": "never-seen"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "ok"
+    end
+  end
+
+  describe "default handler" do
+    test "with no :call_handler configured, echoes the offerer's SDP (passthrough)" do
+      Application.delete_env(:ex_kamailio, :call_handler)
+      {:ok, state} = WebSocket.init([])
+
+      msg =
+        frame("aaaaa", %{command: "offer", "call-id": "def-1", "from-tag": "f1", sdp: @offer_sdp})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      decoded = decode!(reply)
+      assert decoded["result"] == "ok"
+      assert decoded["sdp"] =~ "m=audio 49170"
+      assert decoded["sdp"] =~ "192.168.1.10"
+    end
+  end
+
+  defmodule MarkingHandler do
+    use ExKamailio.CallHandler
+
+    alias ExKamailio.WebSocketTest.Reply
+
+    @impl true
+    def init(_session, opts), do: {:ok, %{report_to: opts[:report_to], mark: nil}}
+
+    @impl true
+    def handle_offer(_offer, session, state) do
+      {:ok, Reply.sdp(), %{state | mark: session.call_id}}
+    end
+
+    @impl true
+    def handle_answer(_answer, _session, state),
+      do: {:ok, Reply.sdp(), state}
+
+    @impl true
+    def handle_delete(session, state) do
+      send(state.report_to, {:deleted, session.call_id, state.mark})
+      :ok
+    end
+  end
+
+  describe "per-call state" do
+    test "interleaved calls keep independent state" do
+      Application.put_env(:ex_kamailio, :call_handler, {MarkingHandler, report_to: self()})
+      {:ok, state} = WebSocket.init([])
+
+      offer = fn cid, ftag ->
+        frame("aaaaa", %{command: "offer", "call-id": cid, "from-tag": ftag, sdp: @offer_sdp})
+      end
+
+      {:push, _, state} = WebSocket.handle_in({offer.("call-A", "fa"), [opcode: :text]}, state)
+      {:push, _, state} = WebSocket.handle_in({offer.("call-B", "fb"), [opcode: :text]}, state)
+
+      del = fn cid -> frame("aaaac", %{command: "delete", "call-id": cid}) end
+      {:push, _, state} = WebSocket.handle_in({del.("call-A"), [opcode: :text]}, state)
+      {:push, _, _state} = WebSocket.handle_in({del.("call-B"), [opcode: :text]}, state)
+
+      assert_receive {:deleted, "call-A", "call-A"}
+      assert_receive {:deleted, "call-B", "call-B"}
+    end
+
+    test "a call survives across pooled connections (offer and delete on different WS)" do
+      Application.put_env(:ex_kamailio, :call_handler, {MarkingHandler, report_to: self()})
+
+      {:ok, conn_a} = WebSocket.init([])
+      {:ok, conn_b} = WebSocket.init([])
+
+      offer =
+        frame("aaaaa", %{command: "offer", "call-id": "call-X", "from-tag": "fx", sdp: @offer_sdp})
+
+      {:push, _, _} = WebSocket.handle_in({offer, [opcode: :text]}, conn_a)
+
+      delete = frame("aaaac", %{command: "delete", "call-id": "call-X"})
+      {:push, _, _} = WebSocket.handle_in({delete, [opcode: :text]}, conn_b)
+
+      assert_receive {:deleted, "call-X", "call-X"}
+    end
+  end
+
+  defmodule CrashingHandler do
+    use ExKamailio.CallHandler
+
+    @impl true
+    def init(_session, _opts), do: {:ok, %{}}
+
+    @impl true
+    def handle_offer(_sdp, _s, _st), do: raise("boom")
+
+    @impl true
+    def handle_answer(_sdp, _s, _st), do: raise("boom")
+  end
+
+  describe "handler crash" do
+    test "a raising offer becomes an error reply, not a WS process crash" do
+      Application.put_env(:ex_kamailio, :call_handler, CrashingHandler)
+      {:ok, state} = WebSocket.init([])
+
+      msg =
+        frame("aaaaa", %{
+          command: "offer",
+          "call-id": "call-crash",
+          "from-tag": "f1",
+          sdp: @offer_sdp
+        })
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+      assert eventually_unregistered("call-crash")
+    end
+  end
+
+  describe "garbage in" do
+    test "returns error for unknown command", %{state: state} do
+      msg = frame("aaaaa", %{command: "wat"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+    end
+
+    test "returns error for non-Bencode body", %{state: state} do
+      msg = "aaaaa not-bencode"
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+    end
+
+    test "rejects an offer with no call-id instead of routing it to a shared call", %{
+      state: state
+    } do
+      msg = frame("aaaaa", %{command: "offer", "from-tag": "f1", sdp: @offer_sdp})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply) == %{"result" => "error", "error-reason" => "missing call-id"}
+    end
+
+    test "rejects an offer with an unparseable SDP body, without starting a call",
+         %{state: state} do
+      msg =
+        frame("aaaaa", %{command: "offer", "call-id": "bad-sdp", "from-tag": "f1", sdp: "not sdp"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+      refute registered?("bad-sdp")
+    end
+
+    test "rejects an offer with no SDP body, without starting a call", %{state: state} do
+      msg = frame("aaaaa", %{command: "offer", "call-id": "no-sdp", "from-tag": "f1"})
+
+      assert {:push, {:text, reply}, _state} =
+               WebSocket.handle_in({msg, [opcode: :text]}, state)
+
+      assert decode!(reply)["result"] == "error"
+      refute registered?("no-sdp")
+    end
+  end
+end

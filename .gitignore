@@ -1,0 +1,27 @@
+# Mix artifacts
+_build/
+deps/
+*.ez
+erl_crash.dump
+
+# Generated docs (ex_doc)
+doc/
+
+# Ignored examples build/deps trees too
+examples/*/_build/
+examples/*/deps/
+examples/*/mix.lock
+examples/*/erl_crash.dump
+
+# Editor
+.elixir_ls/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Erlang crash dumps
+erl_crash.dump
+
+# Host-run relay recordings
+/examples/relay_handler/recordings/

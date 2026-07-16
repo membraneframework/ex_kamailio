@@ -1,4 +1,5 @@
-defmodule ExMedia.Router do
+defmodule ExKamailio.Router do
+  @moduledoc false
   use Plug.Router
   require Logger
 
@@ -9,11 +10,8 @@ defmodule ExMedia.Router do
     send_resp(conn, 200, "ok")
   end
 
-  # get "/rtpengine" do
   get "/" do
-    # Upgrade to WebSocket using WebSock
-    conn
-    |> WebSockAdapter.upgrade(ExMedia.WebSocket, %{}, timeout: 6_000_000)
+    WebSockAdapter.upgrade(conn, ExKamailio.WebSocket, %{}, timeout: 6_000_000)
   end
 
   match _ do
