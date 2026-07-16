@@ -58,7 +58,9 @@ The WebSocket transport is plain `ws` (no TLS), so run Kamailio and
 `ex_kamailio` on the same host or a trusted private network, never exposing
 the port to the public internet. The server binds to loopback (`127.0.0.1`) by
 default; when Kamailio reaches it from another host or container, set a reachable
-bind address, for example `config :ex_kamailio, ws_ip: {0, 0, 0, 0}`.
+bind address, for example `config :ex_kamailio, ws_ip: {0, 0, 0, 0}`. That binds
+every interface, so use it only where the host sits behind a private network: the
+unencrypted `ws` port must never be reachable from the public internet.
 
 ## Writing an `ExKamailio.CallHandler` implementation
 

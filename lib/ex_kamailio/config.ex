@@ -27,6 +27,9 @@ defmodule ExKamailio.Config do
     end
   end
 
+  @spec default_call_handler() :: module()
+  def default_call_handler, do: @default_call_handler
+
   @spec idle_timeout() :: timeout()
   def idle_timeout, do: Application.get_env(:ex_kamailio, :idle_timeout, @default_idle_timeout)
 

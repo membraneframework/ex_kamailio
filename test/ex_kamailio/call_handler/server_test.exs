@@ -1,6 +1,5 @@
 defmodule ExKamailio.CallHandler.ServerTest do
   use ExUnit.Case, async: false
-  @moduletag :capture_log
 
   alias ExKamailio.CallHandler
   alias ExKamailio.Session
