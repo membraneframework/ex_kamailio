@@ -7,7 +7,7 @@ defmodule ExKamailio.CallHandler.Server do
   # any pooled WebSocket connection routes to the same process; the registry entry
   # drops when the process stops.
   #
-  # TODO: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
+  # Not yet implemented: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
   # Right now information about crash of a call handler process does not
   # reach Kamailio. Possible fix: load the `dialog` module + `jsonrpcs` in .cfg,
   # monitor the call process, and POST `dlg.terminate_dlg` on abnormal exit.
