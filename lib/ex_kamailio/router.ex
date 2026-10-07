@@ -1,7 +1,6 @@
 defmodule ExKamailio.Router do
   @moduledoc false
   use Plug.Router
-  require Logger
 
   plug(:match)
   plug(:dispatch)
