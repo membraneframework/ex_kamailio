@@ -1,82 +1,50 @@
 # relay_handler
 
-Two-peer RTP relay built on top of `ex_kamailio` and Membrane. The
-`ExKamailio.CallHandler` callbacks hook Kamailio's `rtpengine` commands
-(offer / answer / delete) into a `Membrane.Pipeline` that grows one
-unidirectional leg at a time as the SIP dialog progresses.
+An `ExKamailio.CallHandler` that relays RTP between the two peers of a call
+through a Membrane pipeline. ex_kamailio only shuttles SDP between Kamailio and
+your code; the media is the handler's job, and this example does the minimum
+of it:
 
-`ex_kamailio` is a pure SDP shuttle — it allocates no ports and owns no media.
-This example owns all of that: it keeps its own `RelayHandler.PortPool`, picks
-the local ports, and binds the sockets.
+- `init/2` starts one `RelayHandler.Pipeline` per call.
+- `handle_offer/3` binds a UDP socket per peer and returns the offer with the
+  relay's address and port in place of the offerer's.
+- `handle_answer/3` points the answerer-facing socket at the answerer and
+  returns the answer rewritten the same way.
+- `handle_delete/2` stops the pipeline.
 
-```
-offer:  answerer → UDP.Source(:offerer_local) ─tee─▶ UDP.Sink ─▶ offerer
-                                                   └▶ answerer_to_offerer.wav
-answer: offerer → UDP.Source(:answerer_local) ─tee─▶ UDP.Sink ─▶ answerer
-                                                   └▶ offerer_to_answerer.wav
-```
+The pipeline cross-links two `Membrane.UDP.Endpoint`s, so whatever one peer
+sends goes out to the other, and records each direction's raw RTP payload to
+`docker/recordings/<call_id>__<from>_to_<to>.raw` as proof that the audio went
+through Membrane. Codecs are whatever the peers negotiate; the e2e call uses
+G.711 A-law, which plays with:
 
-On `offer` the handler picks `offerer_local` (the port advertised in the
-rewritten INVITE — the port the *answerer* sends to) and starts the
-answerer→offerer leg. On `answer` it picks `answerer_local` (the port the
-*offerer* sends to) and adds the offerer→answerer leg to the running pipeline.
-(`<role>_local` names the leg by the SDP exchange that allocated it.)
+    ffplay -f alaw -ar 8000 -ac 1 docker/recordings/<call_id>__offerer_to_answerer.raw
 
-Each leg's output also fans through a `Membrane.Tee.Parallel` into a
-`RTP.Parser → RTP.G711.Depayloader → G711.FFmpeg.Decoder → WAV.Serializer →
-File.Sink` branch, so every bridged call drops two per-direction recordings
-into `docker/recordings/` — `<call_id>__offerer_to_answerer.wav` and
-`<call_id>__answerer_to_offerer.wav`. That's the on-disk proof that the audio
-actually transited the Membrane pipeline. `RelayHandler` forces **PCMU**
-(G.711 μ-law, 8 kHz, mono) in the SDP it returns; the record branch decodes
-it to PCM and writes a standard WAV header, so the files play directly:
+## Running it
 
-```sh
-ffplay docker/recordings/<call_id>__offerer_to_answerer.wav   # or any player
-```
+Everything runs in Docker (Colima on macOS) on the host network:
 
-## Run end-to-end
+    cd docker
+    ./e2e.sh
 
-The Docker rig at `docker/` is the canonical way to drive a real
-call. It supports two modes:
+This builds Kamailio with the library's `kamailio.cfg`, the relay, and a SIPp
+UAS registered as `1000` that echoes RTP back; then it places one call with
+SIPp playing `g711a.pcap` and checks that both recordings contain exactly the
+pcap's payload.
 
-- **Bridge mode** — fully self-contained Docker E2E (SIPp UAC, SIPp
-  UAS, Kamailio, relay, sink). Good for regression checks; no
-  external clients needed.
-- **LAN mode** — Kamailio and relay on the Colima VM's host network,
-  with real softphones on the Mac (Linphone, Zoiper) calling each
-  other through the same stack.
+To use softphones, start the stack with the address they can reach the docker
+host at (with Colima: `colima status` shows it):
 
-Quick version (bridge mode):
+    ADVERTISE_IP=192.168.64.2 docker compose up -d --build
 
-```sh
-cd docker
-docker compose up -d --build relay kamailio sink sipp-uas
-docker compose run --rm sipp-register   # populate Kamailio's usrloc
-docker compose run --rm sipp-uac        # place the call
-ffplay -f alaw -ar 8000 -ch_layout mono recordings/uas.alaw
-```
-
-See [`docker/README.md`](docker/README.md) for the full recipe of
-both modes, the softphone configuration, and rollback / codec /
-caveats notes.
-
-## Run on the host (limited)
-
-```sh
-mix deps.get
-MEDIA_IP=auto mix run --no-halt
-```
-
-This boots `ex_kamailio` on `:4003` with `RelayHandler` registered as
-the command handler. Without Kamailio attached this won't see traffic.
-On macOS, a host-run relay can't fully drive the Docker rig because the
-host can't route UDP back to container bridge IPs — use the dockerized
-flow above instead.
+Register two accounts there (UDP, any password, media encryption off) and call
+each other, or dial `1000` to hear yourself echoed back through the relay. For a
+phone outside your network, run Tailscale on the docker host and use its
+tailnet address.
 
 ## Limitations
 
-- RTP only — RTCP is not relayed yet.
-- Codecs are whatever the two peers negotiate; recordings/playback assume
-  PCMU (μ-law). ex_kamailio forwards the SDP, it doesn't transcode.
-- One pipeline per call, kept in the handler's per-call state.
+- One audio stream per call; any other m-line is rejected with port 0.
+- No NAT traversal: RTP goes to the address in each peer's SDP. Setting
+  `latch?: true` on the endpoints in `RelayHandler.Pipeline` makes the relay
+  follow the source of incoming packets instead.

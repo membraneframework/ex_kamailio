@@ -1,16 +1,11 @@
 import Config
 
-config :ex_kamailio,
-  call_handler: RelayHandler,
-  # Bridge-mode docker sets WS_IP=any: Kamailio connects from another container.
-  ws_ip: if(System.get_env("WS_IP") == "any", do: :any, else: :loopback)
+config :ex_kamailio, call_handler: RelayHandler
 
-# The handler owns the media; these are the example's, not the library's.
-# MEDIA_IP=auto (the default) advertises this host's first non-loopback IPv4 in
-# SDP; set MEDIA_IP to a specific address to override.
+# The address both peers reach the relay at; it goes into every SDP returned.
+{:ok, media_ip} =
+  :inet.parse_address(String.to_charlist(System.get_env("ADVERTISE_IP", "127.0.0.1")))
+
 config :relay_handler,
-  media_ip: System.get_env("MEDIA_IP", "auto"),
-  port_range: 11_000..40_000,
-  # Where per-direction WAV recordings land. Docker sets RECORDINGS_DIR to the
-  # bind-mounted /recordings; on the host it defaults to a local recordings/.
+  media_ip: media_ip,
   recordings_dir: System.get_env("RECORDINGS_DIR", "recordings")
