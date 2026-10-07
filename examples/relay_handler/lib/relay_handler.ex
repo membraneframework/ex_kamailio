@@ -24,7 +24,7 @@ defmodule RelayHandler do
   alias RelayHandler.{Endpoint, PortPool}
 
   @impl true
-  def init(_opts) do
+  def init(_session, _opts) do
     media_ip = resolve_media_ip(Application.get_env(:relay_handler, :media_ip, "auto"))
     {:ok, %{media_ip: media_ip, pipeline: nil, offerer_local: nil, answerer_local: nil}}
   end
@@ -73,7 +73,6 @@ defmodule RelayHandler do
     stop_pipeline(state.pipeline)
     release(state.offerer_local, {session.call_id, :offerer})
     release(state.answerer_local, {session.call_id, :answerer})
-    {:ok, state}
   end
 
   # Force PCMU on both legs so the per-call `.wav` recordings decode cleanly —
