@@ -116,7 +116,7 @@ defmodule ExKamailio.WebSocket do
     end
   end
 
-  # Not yet implemented: the `update` and `query` rtpengine commands would slot in here as
+  # TODO: the `update` and `query` rtpengine commands would slot in here as
   # their own dispatch/4 clauses above this fallback.
   defp dispatch(other, cookie, _cmd, state) do
     Logger.warning("unknown rtpengine command: #{inspect(other)}")
