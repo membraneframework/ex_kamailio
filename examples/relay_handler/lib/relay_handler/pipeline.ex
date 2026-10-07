@@ -52,9 +52,6 @@ defmodule RelayHandler.Pipeline do
     {reply, %{state | ports: ports}}
   end
 
-  @impl true
-  def handle_child_notification(_notification, _child, _ctx, state), do: {[], state}
-
   defp socket(peer, {ip, port}) do
     child({:socket, peer}, %UDP.Endpoint{destination_address: ip, destination_port_no: port})
     |> child({:tee, peer}, Tee)

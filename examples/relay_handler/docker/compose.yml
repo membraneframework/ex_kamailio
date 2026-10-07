@@ -12,6 +12,7 @@ services:
       RECORDINGS_DIR: /recordings
     volumes:
       - ./recordings:/recordings
+    # Kamailio sidelines an rtpengine it cannot reach at startup for a minute.
     healthcheck:
       test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/4003"]
       interval: 2s

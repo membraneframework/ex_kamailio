@@ -22,7 +22,8 @@ G.711 A-law, which plays with:
 
 ## Running it
 
-Everything runs in Docker (Colima on macOS) on the host network:
+Everything runs in Docker on the host network (with Colima on macOS; Docker
+Desktop needs host networking enabled in its settings):
 
     cd docker
     ./e2e.sh
@@ -39,7 +40,8 @@ host at (with Colima: `colima status` shows it):
 
 Register two accounts there (UDP, any password, media encryption off) and call
 each other, or dial `1000` to hear yourself echoed back through the relay. For a
-phone outside your network, run Tailscale on the docker host and use its
+phone outside your network, run Tailscale on the docker host (the
+`tailscale/tailscale` image with `network_mode: host` will do) and use its
 tailnet address.
 
 ## Limitations

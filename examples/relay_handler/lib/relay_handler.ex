@@ -37,10 +37,11 @@ defmodule RelayHandler do
     :ok = Membrane.Pipeline.terminate(state.pipeline)
   end
 
-  # Where the peer wants its audio sent.
+  # Where the peer wants its audio sent. ExSDP gives the m-line the session's
+  # c= line when it has none of its own, as a struct rather than a list.
   defp media_address(sdp) do
     media = audio(sdp)
-    %ConnectionData{address: ip} = media.connection_data || sdp.connection_data
+    [%ConnectionData{address: ip} | _] = List.wrap(media.connection_data)
     {ip, media.port}
   end
 
