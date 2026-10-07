@@ -1,8 +1,9 @@
 import Config
 
 config :ex_kamailio,
-  ws_port: 4003,
-  call_handler: RelayHandler
+  call_handler: RelayHandler,
+  # Bridge-mode docker sets WS_IP=any: Kamailio connects from another container.
+  ws_ip: if(System.get_env("WS_IP") == "any", do: :any, else: :loopback)
 
 # The handler owns the media; these are the example's, not the library's.
 # MEDIA_IP=auto (the default) advertises this host's first non-loopback IPv4 in

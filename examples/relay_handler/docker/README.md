@@ -12,7 +12,7 @@ together, in two modes:
   through the same stack.
 
 Both modes share the same Kamailio config and relay image. LAN mode
-flips `network_mode` and takes the `#!ifdef LAN_MODE` branches in the
+flips `network_mode` and takes the `#!ifdef PUBLIC_MODE` branches in the
 cfg: `rtpengine_sock` becomes loopback (`ws://127.0.0.1:4003`) instead
 of docker DNS (`ws://relay:4003`), and the `advertise`/`alias` lines
 for `$ADVERTISE_IP` are enabled (see "Call teardown" below).
@@ -302,7 +302,7 @@ Because kamailio runs `network_mode: host` and binds `0.0.0.0`,
 an address the softphones can't route their in-dialog BYE to, so
 hanging up one phone would never tear down the other (the relay
 pipeline would linger as a zombie). `compose.lan.yml` fixes this by
-passing `$ADVERTISE_IP` in the environment; under `-A LAN_MODE` the cfg
+passing `$ADVERTISE_IP` in the environment; under `-A PUBLIC_MODE` the cfg
 reads it via `$env(ADVERTISE_IP)` into the `advertise` address, so
 Record-Route/Via point at a reachable address. If you ever see calls that
 don't hang up, confirm `ADVERTISE_IP` is set to an address reachable from
@@ -339,7 +339,7 @@ container by `compose.yml`.
 | SDP-advertised media IP              | `MEDIA_IP` env in compose (bridge = `auto`, the container's own IP; LAN = `$ADVERTISE_IP`) |
 | Reachable address for real phones    | `$ADVERTISE_IP` — set by `tailscale-lan.sh` (tailnet IP) or exported manually; the single knob for both SIP + media |
 | Registrar destination (relay)        | `kamailio.cfg`, `rtpengine_sock` line — reads `$env(RTPENGINE_SOCK)`; compose sets it to docker DNS (`ws://relay:4003`) or loopback (`ws://127.0.0.1:4003`) |
-| SIP advertise address (LAN)          | `kamailio.cfg` `listen ... advertise ADVERTISE_IP` — reads `$env(ADVERTISE_IP)` (set in `compose.lan.yml`) under `-A LAN_MODE`; fixes in-dialog BYE routing |
+| SIP advertise address (LAN)          | `kamailio.cfg` `listen ... advertise ADVERTISE_IP` — reads `$env(ADVERTISE_IP)` (set in `compose.lan.yml`) under `-A PUBLIC_MODE`; fixes in-dialog BYE routing |
 | In-dialog requests to GRUU/proxy Contacts | `kamailio.cfg` — `alias` + `if (uri==myself) lookup("location")` re-resolves them to the real binding so BYE/ACK reach the callee |
 | Relay readiness gate                 | `compose.yml` — relay `healthcheck` (port 4003) + kamailio `depends_on: condition: service_healthy`, so kamailio's rtpengine link doesn't race the relay's boot |
 | Relay UDP port range                 | `RelayHandler.PortPool` — `:relay_handler` `port_range` config (`config/config.exs`) |

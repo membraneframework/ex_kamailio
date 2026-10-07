@@ -40,6 +40,8 @@ services:
       # inet_aton, so a name never becomes a usable RTP destination.
       MEDIA_IP: auto
       RECORDINGS_DIR: /recordings
+      # Kamailio connects from its own container, so the control socket can't stay on loopback.
+      WS_IP: any
     # Mounted so the per-call Tee+File.Sink branches of the Membrane pipeline
     # (RelayHandler.Pipeline) can write codec payloads here for inspection.
     volumes:
@@ -67,6 +69,9 @@ services:
       # The cfg reads the rtpengine ng socket from $env(RTPENGINE_SOCK); on the
       # bridge network the relay is reachable as `relay` via docker DNS.
       RTPENGINE_SOCK: ws://relay:4003
+    # PUBLIC_MODE: advertise a real address (the container IP unless ADVERTISE_IP
+    # is set) so Record-Route is routable and in-dialog ACK/BYE reach the callee.
+    command: ["sh", "-c", "ADVERTISE_IP=$${ADVERTISE_IP:-$$(hostname -i)} exec kamailio -f /etc/kamailio/kamailio.cfg -DD -E -A PUBLIC_MODE"]
     volumes:
       - ../../../priv/kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
     # Wait until the relay's control socket is actually listening, not just
