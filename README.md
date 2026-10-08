@@ -95,6 +95,10 @@ The callbacks receive the peer's parsed offer/answer (`%ExSDP{}`) and return the
 `%ExSDP{}` to advertise back. Each Kamailio dialog gets its own
 `ExKamailio.CallHandler` process with separate state.
 
+[`examples/relay_handler`](examples/relay_handler/README.md) is a complete handler that
+relays the media through a Membrane pipeline, with Kamailio and SIPp in Docker
+and an end-to-end test.
+
 ## Call flow
 
 The peers are named by their RFC 3264 roles: **offerer** proposes SDP,

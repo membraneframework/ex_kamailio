@@ -1,0 +1,66 @@
+# Everything shares the host network (the docker VM on macOS), so softphones
+# can reach Kamailio and the relay at ADVERTISE_IP. Unset, the stack stays on
+# loopback, which is all e2e.sh needs.
+services:
+  relay:
+    build:
+      context: ../../.. # the ex_kamailio repo root: the image needs the library too
+      dockerfile: examples/relay_handler/docker/relay/Dockerfile
+    network_mode: host
+    environment:
+      ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
+      RECORDINGS_DIR: /recordings
+    volumes:
+      - ./recordings:/recordings
+    # Kamailio sidelines an rtpengine it cannot reach at startup for a minute.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/4003"]
+      interval: 2s
+      start_period: 60s
+
+  kamailio:
+    build: ./kamailio
+    network_mode: host
+    environment:
+      ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
+      RTPENGINE_SOCK: ws://127.0.0.1:4003
+    volumes:
+      - ../../../priv/kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
+    depends_on:
+      relay:
+        condition: service_healthy
+
+  # Registers as 1000 and echoes back whatever RTP it receives.
+  sipp-uas:
+    build: ./sipp
+    network_mode: host
+    command: >
+      sh -c "sipp -sf register.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5070 -m 1 > /dev/null
+      && exec sipp -sf uas.xml -i 127.0.0.1 -p 5070 -mi 127.0.0.1 -mp 6000 -rtp_echo"
+    depends_on:
+      - kamailio
+
+  # Calls 1000 and plays SIPp's g711a.pcap; run by e2e.sh.
+  sipp-uac:
+    build: ./sipp
+    network_mode: host
+    command: sipp -sf uac.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5080 -mi 127.0.0.1 -mp 7000 -m 1
+    profiles: [e2e]
+
+  # Joins the host network to a tailnet, so phones elsewhere can reach the stack.
+  tailscale:
+    image: tailscale/tailscale:stable
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    devices: [/dev/net/tun]
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: relay-handler
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    profiles: [tailscale]
+
+volumes:
+  tailscale-state:
