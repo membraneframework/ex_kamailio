@@ -11,8 +11,13 @@ defmodule RelayHandler do
 
   use ExKamailio.CallHandler
 
+  alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias ExSDP.ConnectionData
   alias RelayHandler.Pipeline
+
+  # Only PCMA gets through, so every recording is A-law. The handler's choice;
+  # ex_kamailio itself is codec-agnostic.
+  @codec "PCMA"
 
   @impl true
   def init(session, _opts) do
@@ -53,18 +58,8 @@ defmodule RelayHandler do
 
     media =
       Enum.map(sdp.media, fn
-        ^audio ->
-          attributes = Enum.reject(audio.attributes, &transport_attribute?/1)
-
-          %{
-            audio
-            | port: port,
-              connection_data: relay,
-              attributes: Enum.uniq([:rtcp_mux | attributes])
-          }
-
-        other ->
-          %{other | port: 0}
+        ^audio -> relayed_audio(audio, relay, port)
+        other -> %{other | port: 0}
       end)
 
     %{
@@ -75,10 +70,39 @@ defmodule RelayHandler do
     }
   end
 
+  defp relayed_audio(audio, connection, port) do
+    payload_types = payload_types(audio)
+
+    attributes =
+      Enum.reject(audio.attributes, fn
+        %RTPMapping{payload_type: pt} -> pt not in payload_types
+        %FMTP{pt: pt} -> pt not in payload_types
+        attribute -> transport_attribute?(attribute)
+      end)
+
+    %{
+      audio
+      | port: port,
+        connection_data: connection,
+        fmt: Enum.filter(audio.fmt, &(&1 in payload_types)),
+        attributes: Enum.uniq([:rtcp_mux | attributes])
+    }
+  end
+
+  # PCMA is static payload type 8 and may come without an rtpmap line.
+  defp payload_types(audio) do
+    mapped =
+      for %RTPMapping{payload_type: pt, encoding: encoding} <- audio.attributes,
+          String.upcase(encoding) == @codec,
+          do: pt
+
+    [8 | mapped]
+  end
+
   defp audio(sdp), do: Enum.find(sdp.media, &(&1.type == :audio))
 
   # Where media goes is the relay's to say, so the peer's RTCP address and ICE
-  # candidates go; codecs, direction and keys stay the peer's.
+  # candidates go; direction, keys and the rest stay the peer's.
   defp transport_attribute?({key, _}),
     do: key in ["rtcp", "candidate", :ice_ufrag, :ice_pwd, :ice_options]
 
