@@ -54,7 +54,7 @@ defmodule RelayHandler do
     media =
       Enum.map(sdp.media, fn
         ^audio ->
-          attributes = Enum.reject(audio.attributes, &match?({"rtcp", _}, &1))
+          attributes = Enum.reject(audio.attributes, &transport_attribute?/1)
 
           %{
             audio
@@ -67,8 +67,20 @@ defmodule RelayHandler do
           %{other | port: 0}
       end)
 
-    %{sdp | connection_data: relay, media: media}
+    %{
+      sdp
+      | connection_data: relay,
+        media: media,
+        attributes: Enum.reject(sdp.attributes, &transport_attribute?/1)
+    }
   end
 
   defp audio(sdp), do: Enum.find(sdp.media, &(&1.type == :audio))
+
+  # Where media goes is the relay's to say, so the peer's RTCP address and ICE
+  # candidates go; codecs, direction and keys stay the peer's.
+  defp transport_attribute?({key, _}),
+    do: key in ["rtcp", "candidate", :ice_ufrag, :ice_pwd, :ice_options]
+
+  defp transport_attribute?(attribute), do: attribute in ["end-of-candidates", :ice_lite]
 end

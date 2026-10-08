@@ -46,3 +46,21 @@ services:
     network_mode: host
     command: sipp -sf uac.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5080 -mi 127.0.0.1 -mp 7000 -m 1
     profiles: [e2e]
+
+  # Joins the host network to a tailnet, so phones elsewhere can reach the stack.
+  tailscale:
+    image: tailscale/tailscale:stable
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    devices: [/dev/net/tun]
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: relay-handler
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    profiles: [tailscale]
+
+volumes:
+  tailscale-state:

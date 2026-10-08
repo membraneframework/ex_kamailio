@@ -41,8 +41,20 @@ host at (with Colima: `colima status` shows it):
 Register two accounts there (UDP, any password, media encryption off) and call
 each other, or dial `1000` to hear yourself echoed back through the relay.
 
+For a phone that cannot reach the docker host (on macOS the stack lives in the
+Docker VM, which other devices cannot reach), put the stack on a tailnet:
+
+    docker compose --profile tailscale up -d tailscale
+    docker compose logs tailscale   # log in with the URL it prints
+    ADVERTISE_IP=$(docker compose exec tailscale tailscale ip -4) docker compose up -d --build
+
+Log the phone and the computer into the same tailnet and register the
+softphones at that address.
+
 ## Limitations
 
+- Nothing is hardened: Kamailio accepts any REGISTER and the relay forwards
+  whatever it gets. Keep the stack on a private network.
 - One audio stream per call; any other m-line is rejected with port 0.
 - Peers behind NAT get their audio once they have sent some: the relay sends to
   the address from the SDP until packets arrive, then to wherever they come
