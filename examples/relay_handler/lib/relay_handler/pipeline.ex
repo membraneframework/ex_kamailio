@@ -3,11 +3,11 @@ defmodule RelayHandler.Pipeline do
   The media path of one call: a `Membrane.UDP.Endpoint` facing each peer,
   cross-linked so that whatever one peer sends goes out to the other.
 
-  Both sockets are bound on `:offer`, before their ports get into any SDP.
-  The offerer's address is known by then; the answerer's is set on `:answer`.
-  Either is only where the first packets go: each socket then latches onto
-  the source of what it receives, which is what gets through a peer's NAT.
-  Each direction is also recorded as raw RTP payload to
+  `offer/2` binds both sockets, before their ports get into any SDP, and aims
+  the offerer-facing one at the offerer; `answer/2` aims the other at the
+  answerer. Either address is only where the first packets go: each socket
+  then latches onto the source of what it receives, which is what gets
+  through a peer's NAT. Each direction is also recorded as raw RTP payload to
   `<recordings_dir>/<call_id>__<from>_to_<to>.raw`.
   """
 
@@ -15,16 +15,29 @@ defmodule RelayHandler.Pipeline do
 
   alias Membrane.{RTP, Tee, UDP}
 
-  # The answerer-facing socket needs a destination before the answer comes;
-  # the discard port keeps anything sent in the meantime from going anywhere.
+  @type address :: {:inet.ip_address(), :inet.port_number()}
+
+  # A destination for the answerer-facing socket until the answer comes: the discard port.
   @nowhere {{127, 0, 0, 1}, 9}
+
+  @spec start_link(call_id :: String.t()) :: Membrane.Pipeline.on_start()
+  def start_link(call_id), do: Membrane.Pipeline.start_link(__MODULE__, call_id)
+
+  @spec offer(pid(), address()) :: %{offerer: :inet.port_number(), answerer: :inet.port_number()}
+  def offer(pipeline, offerer), do: Membrane.Pipeline.call(pipeline, {:offer, offerer})
+
+  @spec answer(pid(), address()) :: :ok
+  def answer(pipeline, answerer), do: Membrane.Pipeline.call(pipeline, {:answer, answerer})
+
+  @spec terminate(pid()) :: :ok | {:error, :timeout}
+  def terminate(pipeline), do: Membrane.Pipeline.terminate(pipeline)
 
   @impl true
   def handle_init(_ctx, call_id) do
     recordings_dir = Application.fetch_env!(:relay_handler, :recordings_dir)
     File.mkdir_p!(recordings_dir)
-    prefix = Path.join(recordings_dir, String.replace(call_id, ~r/[^\w.@-]/, "_"))
-    {[], %{prefix: prefix, ports: %{}, from: nil}}
+    file_name = String.replace(call_id, ~r/[^\w.@-]/, "_")
+    {[], %{prefix: Path.join(recordings_dir, file_name), ports: %{}, from: nil}}
   end
 
   @impl true
@@ -46,7 +59,7 @@ defmodule RelayHandler.Pipeline do
     {[notify_child: {{:socket, :answerer}, {:set_destination, ip, port}}, reply: :ok], state}
   end
 
-  # :offer is answered once both sockets report the ports they got.
+  # offer/2 returns once both sockets report their ports.
   @impl true
   def handle_child_notification({:connection_info, _ip, port}, {:socket, peer}, _ctx, state) do
     ports = Map.put(state.ports, peer, port)
@@ -55,11 +68,9 @@ defmodule RelayHandler.Pipeline do
   end
 
   defp socket(peer, {ip, port}) do
-    child({:socket, peer}, %UDP.Endpoint{
-      destination_address: ip,
-      destination_port_no: port,
-      latch?: true
-    })
+    endpoint = %UDP.Endpoint{destination_address: ip, destination_port_no: port, latch?: true}
+
+    child({:socket, peer}, endpoint)
     |> child({:tee, peer}, Tee)
   end
 

@@ -15,43 +15,40 @@ defmodule RelayHandler do
   alias ExSDP.ConnectionData
   alias RelayHandler.Pipeline
 
-  # Only PCMA gets through, so every recording is A-law. The handler's choice;
-  # ex_kamailio itself is codec-agnostic.
+  # Only PCMA gets through, so every recording is A-law.
   @codec "PCMA"
 
   @impl true
   def init(session, _opts) do
-    {:ok, _supervisor, pipeline} = Membrane.Pipeline.start_link(Pipeline, session.call_id)
+    {:ok, _supervisor, pipeline} = Pipeline.start_link(session.call_id)
     {:ok, %{pipeline: pipeline, ports: nil}}
   end
 
   @impl true
   def handle_offer(offer, _session, state) do
-    ports = Membrane.Pipeline.call(state.pipeline, {:offer, media_address(offer)})
+    ports = Pipeline.offer(state.pipeline, media_address(offer))
     {:ok, relayed(offer, ports.answerer), %{state | ports: ports}}
   end
 
   @impl true
   def handle_answer(answer, _session, state) do
-    :ok = Membrane.Pipeline.call(state.pipeline, {:answer, media_address(answer)})
+    :ok = Pipeline.answer(state.pipeline, media_address(answer))
     {:ok, relayed(answer, state.ports.offerer), state}
   end
 
   @impl true
   def handle_delete(_session, state) do
-    :ok = Membrane.Pipeline.terminate(state.pipeline)
+    :ok = Pipeline.terminate(state.pipeline)
   end
 
-  # Where the peer wants its audio sent. ExSDP gives the m-line the session's
-  # c= line when it has none of its own, as a struct rather than a list.
+  # An m-line's own c= lines come as a list, the session's one it inherits as a struct.
   defp media_address(sdp) do
     media = audio(sdp)
     [%ConnectionData{address: ip} | _] = List.wrap(media.connection_data)
     {ip, media.port}
   end
 
-  # The peer's SDP with the relay as the media address. Anything but the first
-  # audio stream is rejected (port 0); RTCP shares the RTP socket.
+  # Only the first audio stream is relayed; port 0 rejects the rest.
   defp relayed(sdp, port) do
     relay = %ConnectionData{address: Application.fetch_env!(:relay_handler, :media_ip)}
     audio = audio(sdp)
@@ -62,16 +59,14 @@ defmodule RelayHandler do
         other -> %{other | port: 0}
       end)
 
-    %{
-      sdp
-      | connection_data: relay,
-        media: media,
-        attributes: Enum.reject(sdp.attributes, &transport_attribute?/1)
-    }
+    attributes = Enum.reject(sdp.attributes, &transport_attribute?/1)
+    %{sdp | connection_data: relay, media: media, attributes: attributes}
   end
 
-  defp relayed_audio(audio, connection, port) do
+  # The pipeline has one socket per peer, so RTCP has to share it.
+  defp relayed_audio(audio, relay, port) do
     payload_types = payload_types(audio)
+    fmt = Enum.filter(audio.fmt, &(&1 in payload_types))
 
     attributes =
       Enum.reject(audio.attributes, fn
@@ -80,13 +75,7 @@ defmodule RelayHandler do
         attribute -> transport_attribute?(attribute)
       end)
 
-    %{
-      audio
-      | port: port,
-        connection_data: connection,
-        fmt: Enum.filter(audio.fmt, &(&1 in payload_types)),
-        attributes: Enum.uniq([:rtcp_mux | attributes])
-    }
+    %{audio | connection_data: relay, port: port, fmt: fmt, attributes: [:rtcp_mux | attributes]}
   end
 
   # PCMA is static payload type 8 and may come without an rtpmap line.
@@ -101,10 +90,10 @@ defmodule RelayHandler do
 
   defp audio(sdp), do: Enum.find(sdp.media, &(&1.type == :audio))
 
-  # Where media goes is the relay's to say, so the peer's RTCP address and ICE
-  # candidates go; direction, keys and the rest stay the peer's.
+  # The peer's RTCP address and ICE would lead the other peer past the relay.
   defp transport_attribute?({key, _}),
     do: key in ["rtcp", "candidate", :ice_ufrag, :ice_pwd, :ice_options]
 
-  defp transport_attribute?(attribute), do: attribute in ["end-of-candidates", :ice_lite]
+  defp transport_attribute?(attribute),
+    do: attribute in ["end-of-candidates", :ice_lite, :rtcp_mux]
 end
