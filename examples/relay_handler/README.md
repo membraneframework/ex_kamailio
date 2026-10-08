@@ -39,14 +39,11 @@ host at (with Colima: `colima status` shows it):
     ADVERTISE_IP=192.168.64.2 docker compose up -d --build
 
 Register two accounts there (UDP, any password, media encryption off) and call
-each other, or dial `1000` to hear yourself echoed back through the relay. For a
-phone outside your network, run Tailscale on the docker host (the
-`tailscale/tailscale` image with `network_mode: host` will do) and use its
-tailnet address.
+each other, or dial `1000` to hear yourself echoed back through the relay.
 
 ## Limitations
 
 - One audio stream per call; any other m-line is rejected with port 0.
-- No NAT traversal: RTP goes to the address in each peer's SDP. Setting
-  `latch?: true` on the endpoints in `RelayHandler.Pipeline` makes the relay
-  follow the source of incoming packets instead.
+- Peers behind NAT get their audio once they have sent some: the relay sends to
+  the address from the SDP until packets arrive, then to wherever they come
+  from. Nothing checks who sends them.

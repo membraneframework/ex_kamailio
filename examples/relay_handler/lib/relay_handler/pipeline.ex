@@ -5,6 +5,8 @@ defmodule RelayHandler.Pipeline do
 
   Both sockets are bound on `:offer`, before their ports get into any SDP.
   The offerer's address is known by then; the answerer's is set on `:answer`.
+  Either is only where the first packets go: each socket then latches onto
+  the source of what it receives, which is what gets through a peer's NAT.
   Each direction is also recorded as raw RTP payload to
   `<recordings_dir>/<call_id>__<from>_to_<to>.raw`.
   """
@@ -53,7 +55,11 @@ defmodule RelayHandler.Pipeline do
   end
 
   defp socket(peer, {ip, port}) do
-    child({:socket, peer}, %UDP.Endpoint{destination_address: ip, destination_port_no: port})
+    child({:socket, peer}, %UDP.Endpoint{
+      destination_address: ip,
+      destination_port_no: port,
+      latch?: true
+    })
     |> child({:tee, peer}, Tee)
   end
 
