@@ -67,6 +67,7 @@ defmodule RelayHandler do
   defp relayed_audio(audio, relay, port) do
     payload_types = payload_types(audio)
     fmt = Enum.filter(audio.fmt, &(&1 in payload_types))
+    if fmt == [], do: raise("no #{@codec} in the SDP")
 
     attributes =
       Enum.reject(audio.attributes, fn

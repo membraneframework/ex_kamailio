@@ -83,7 +83,8 @@ The relay runs from the image, so after editing `lib/` rebuild it with
 - Nothing is hardened: Kamailio accepts any REGISTER and the relay forwards
   whatever it gets. Keep the stack on a private network.
 - One audio stream per call; any other m-line is rejected with port 0.
-- G.711 A-law only; a peer offering nothing else gets an empty codec list.
+- G.711 A-law only; an offer without it is rejected with 488 Not Acceptable
+  Here.
 - Peers behind NAT get their audio once they have sent some: the relay sends
   to the address from the SDP until packets arrive, then to wherever they come
   from. Nothing checks who sends them.
