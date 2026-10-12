@@ -1,10 +1,11 @@
-# relay_handler
+# recording_relay
 
 An `ExKamailio.CallHandler` that relays RTP between the two peers of a call
-through a Membrane pipeline. ex_kamailio only shuttles SDP between Kamailio and
-your code; the media is the handler's job. This one does the minimum:
+through a Membrane pipeline and records both directions. ex_kamailio only
+shuttles SDP between Kamailio and your code; the media is the handler's job.
+This one does the minimum:
 
-- `init/2` starts one `RelayHandler.Pipeline` per call.
+- `init/2` starts one `RecordingRelay.Pipeline` per call.
 - `handle_offer/3` binds a UDP socket per peer and returns the offer with the
   relay's address and port in place of the offerer's.
 - `handle_answer/3` points the answerer-facing socket at the answerer and
@@ -13,9 +14,8 @@ your code; the media is the handler's job. This one does the minimum:
 
 The pipeline cross-links two `Membrane.UDP.Endpoint`s, so whatever one peer
 sends goes out to the other, and records each direction's raw RTP payload to
-`docker/recordings/<call_id>__<from>_to_<to>.raw` as proof that the audio went
-through Membrane. The handler lets only G.711 A-law through, so every
-recording plays with:
+`docker/recordings/<call_id>__<from>_to_<to>.raw`. The handler lets only
+G.711 A-law through, so every recording plays with:
 
     ffplay -f alaw -ar 8000 -ac 1 docker/recordings/<call_id>__offerer_to_answerer.raw
 

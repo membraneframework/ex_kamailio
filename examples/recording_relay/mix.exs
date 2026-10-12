@@ -1,9 +1,9 @@
-defmodule RelayHandler.MixProject do
+defmodule RecordingRelay.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :relay_handler,
+      app: :recording_relay,
       version: "0.1.0",
       elixir: "~> 1.17",
       deps: deps()

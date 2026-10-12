@@ -87,9 +87,9 @@ end
 The callbacks get the peer's SDP as `%ExSDP{}` and return the `%ExSDP{}` to
 send on. Each call runs in its own process, with its own state.
 
-[`examples/relay_handler`](examples/relay_handler/README.md) is a complete
-handler that relays the media through a Membrane pipeline, with Kamailio and
-SIPp in Docker and an end-to-end test.
+[`examples/recording_relay`](examples/recording_relay/README.md) is a complete
+handler that relays the media through a Membrane pipeline and records it, with
+Kamailio and SIPp in Docker and an end-to-end test.
 
 ## Call flow
 

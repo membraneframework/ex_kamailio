@@ -1,6 +1,6 @@
 import Config
 
-config :ex_kamailio, call_handler: RelayHandler
+config :ex_kamailio, call_handler: RecordingRelay
 
 # The address both peers reach the relay at; it goes into every SDP returned.
 {:ok, media_ip} =
@@ -8,6 +8,6 @@ config :ex_kamailio, call_handler: RelayHandler
   |> String.to_charlist()
   |> :inet.parse_address()
 
-config :relay_handler,
+config :recording_relay,
   media_ip: media_ip,
   recordings_dir: System.get_env("RECORDINGS_DIR", "recordings")

@@ -4,7 +4,7 @@ services:
   relay:
     build:
       context: ../../.. # the repo root: the image needs the library too
-      dockerfile: examples/relay_handler/docker/relay/Dockerfile
+      dockerfile: examples/recording_relay/docker/relay/Dockerfile
     network_mode: host
     environment:
       ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
@@ -53,7 +53,7 @@ services:
     cap_add: [NET_ADMIN, NET_RAW]
     devices: [/dev/net/tun]
     environment:
-      TS_HOSTNAME: relay-handler
+      TS_HOSTNAME: recording-relay
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "false"
     volumes:

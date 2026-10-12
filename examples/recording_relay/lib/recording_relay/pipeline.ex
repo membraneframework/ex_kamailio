@@ -1,4 +1,4 @@
-defmodule RelayHandler.Pipeline do
+defmodule RecordingRelay.Pipeline do
   @moduledoc """
   The media path of one call: a `Membrane.UDP.Endpoint` facing each peer,
   cross-linked so that whatever one peer sends goes out to the other.
@@ -34,7 +34,7 @@ defmodule RelayHandler.Pipeline do
 
   @impl true
   def handle_init(_ctx, call_id) do
-    recordings_dir = Application.fetch_env!(:relay_handler, :recordings_dir)
+    recordings_dir = Application.fetch_env!(:recording_relay, :recordings_dir)
     File.mkdir_p!(recordings_dir)
     file_name = String.replace(call_id, ~r/[^\w.@-]/, "_")
     {[], %{prefix: Path.join(recordings_dir, file_name), ports: %{}, from: nil}}

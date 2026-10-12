@@ -1,10 +1,10 @@
-defmodule RelayHandler do
+defmodule RecordingRelay do
   @moduledoc """
   `ExKamailio.CallHandler` that relays RTP between the two peers of a call
-  through a Membrane pipeline.
+  through a Membrane pipeline and records both directions.
 
   ex_kamailio only passes SDP between Kamailio and this module; the media is
-  the handler's business. Every call gets its own `RelayHandler.Pipeline` with
+  the handler's business. Every call gets its own `RecordingRelay.Pipeline` with
   one UDP socket per peer, and each peer's SDP is rewritten so that the other
   peer sends its RTP to the relay.
   """
@@ -13,7 +13,7 @@ defmodule RelayHandler do
 
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias ExSDP.ConnectionData
-  alias RelayHandler.Pipeline
+  alias RecordingRelay.Pipeline
 
   # Only PCMA gets through, so every recording is A-law.
   @codec "PCMA"
@@ -50,7 +50,7 @@ defmodule RelayHandler do
 
   # Only the first audio stream is relayed; port 0 rejects the rest.
   defp relayed(sdp, port) do
-    relay = %ConnectionData{address: Application.fetch_env!(:relay_handler, :media_ip)}
+    relay = %ConnectionData{address: Application.fetch_env!(:recording_relay, :media_ip)}
     audio = audio(sdp)
 
     media =

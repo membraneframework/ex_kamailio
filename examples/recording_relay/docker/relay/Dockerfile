@@ -7,11 +7,11 @@ RUN apt-get update \
 WORKDIR /src
 COPY mix.exs mix.lock ./
 COPY lib ./lib
-COPY examples/relay_handler/mix.exs examples/relay_handler/mix.lock ./examples/relay_handler/
-COPY examples/relay_handler/config ./examples/relay_handler/config
-COPY examples/relay_handler/lib ./examples/relay_handler/lib
+COPY examples/recording_relay/mix.exs examples/recording_relay/mix.lock ./examples/recording_relay/
+COPY examples/recording_relay/config ./examples/recording_relay/config
+COPY examples/recording_relay/lib ./examples/recording_relay/lib
 
-WORKDIR /src/examples/relay_handler
+WORKDIR /src/examples/recording_relay
 ENV MIX_ENV=prod
 RUN mix local.hex --force && mix local.rebar --force && mix deps.get && mix compile
 
