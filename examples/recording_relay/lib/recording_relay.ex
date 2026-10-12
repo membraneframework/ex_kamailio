@@ -4,9 +4,10 @@ defmodule RecordingRelay do
   through a Membrane pipeline and records both directions.
 
   ex_kamailio only passes SDP between Kamailio and this module; the media is
-  the handler's business. Every call gets its own `RecordingRelay.Pipeline` with
-  one UDP socket per peer, and each peer's SDP is rewritten so that the other
-  peer sends its RTP to the relay.
+  the business of this module. Every call gets its own `RecordingRelay.Pipeline`
+  with one UDP socket per peer, and each peer's SDP goes on with the relay's
+  address and port in place of the peer's own, so that the other peer sends
+  its RTP to the relay.
   """
 
   use ExKamailio.CallHandler
@@ -15,7 +16,6 @@ defmodule RecordingRelay do
   alias ExSDP.ConnectionData
   alias RecordingRelay.Pipeline
 
-  # Only PCMA gets through, so every recording is A-law.
   @codec "PCMA"
 
   @impl true
@@ -27,13 +27,15 @@ defmodule RecordingRelay do
   @impl true
   def handle_offer(offer, _session, state) do
     ports = Pipeline.offer(state.pipeline, media_address(offer))
-    {:ok, relayed(offer, ports.answerer), %{state | ports: ports}}
+    offer = offer |> relayed(ports.answerer)
+    {:ok, offer, %{state | ports: ports}}
   end
 
   @impl true
   def handle_answer(answer, _session, state) do
     :ok = Pipeline.answer(state.pipeline, media_address(answer))
-    {:ok, relayed(answer, state.ports.offerer), state}
+    answer = answer |> relayed(state.ports.offerer)
+    {:ok, answer, state}
   end
 
   @impl true
@@ -48,29 +50,30 @@ defmodule RecordingRelay do
     {ip, media.port}
   end
 
-  # Only the first audio stream is relayed; port 0 rejects the rest.
   defp relayed(sdp, port) do
     relay = %ConnectionData{address: Application.fetch_env!(:recording_relay, :media_ip)}
     audio = audio(sdp)
 
     media =
-      Enum.map(sdp.media, fn
+      sdp.media
+      |> Enum.map(fn
         ^audio -> relayed_audio(audio, relay, port)
         other -> %{other | port: 0}
       end)
 
-    attributes = Enum.reject(sdp.attributes, &transport_attribute?/1)
+    attributes = sdp.attributes |> Enum.reject(&transport_attribute?/1)
     %{sdp | connection_data: relay, media: media, attributes: attributes}
   end
 
   # The pipeline has one socket per peer, so RTCP has to share it.
   defp relayed_audio(audio, relay, port) do
     payload_types = payload_types(audio)
-    fmt = Enum.filter(audio.fmt, &(&1 in payload_types))
+    fmt = audio.fmt |> Enum.filter(&(&1 in payload_types))
     if fmt == [], do: raise("no #{@codec} in the SDP")
 
     attributes =
-      Enum.reject(audio.attributes, fn
+      audio.attributes
+      |> Enum.reject(fn
         %RTPMapping{payload_type: pt} -> pt not in payload_types
         %FMTP{pt: pt} -> pt not in payload_types
         attribute -> transport_attribute?(attribute)
@@ -89,7 +92,7 @@ defmodule RecordingRelay do
     [8 | mapped]
   end
 
-  defp audio(sdp), do: Enum.find(sdp.media, &(&1.type == :audio))
+  defp audio(sdp), do: sdp.media |> Enum.find(&(&1.type == :audio))
 
   # The peer's RTCP address and ICE would lead the other peer past the relay.
   defp transport_attribute?({key, _}),

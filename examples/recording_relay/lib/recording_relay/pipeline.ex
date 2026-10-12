@@ -7,8 +7,8 @@ defmodule RecordingRelay.Pipeline do
   the offerer-facing one at the offerer; `answer/2` aims the other at the
   answerer. Either address is only where the first packets go: each socket
   then latches onto the source of what it receives, which is what gets
-  through a peer's NAT. Each direction is also recorded as raw RTP payload to
-  `<recordings_dir>/<call_id>__<from>_to_<to>.raw`.
+  through a peer's NAT. Each direction is also written, with the RTP headers
+  stripped, to `<recordings_dir>/<call_id>__<from>_to_<to>.raw`.
   """
 
   use Membrane.Pipeline
@@ -36,8 +36,9 @@ defmodule RecordingRelay.Pipeline do
   def handle_init(_ctx, call_id) do
     recordings_dir = Application.fetch_env!(:recording_relay, :recordings_dir)
     File.mkdir_p!(recordings_dir)
-    file_name = String.replace(call_id, ~r/[^\w.@-]/, "_")
-    {[], %{prefix: Path.join(recordings_dir, file_name), ports: %{}, from: nil}}
+    file_name = call_id |> String.replace(~r/[^\w.@-]/, "_")
+    prefix = Path.join(recordings_dir, file_name)
+    {[], %{prefix: prefix, ports: %{}, from: nil}}
   end
 
   @impl true
@@ -56,19 +57,24 @@ defmodule RecordingRelay.Pipeline do
 
   @impl true
   def handle_call({:answer, {ip, port}}, _ctx, state) do
-    {[notify_child: {{:socket, :answerer}, {:set_destination, ip, port}}, reply: :ok], state}
+    actions = [notify_child: {{:socket, :answerer}, {:set_destination, ip, port}}, reply: :ok]
+    {actions, state}
   end
 
   # offer/2 returns once both sockets report their ports.
   @impl true
   def handle_child_notification({:connection_info, _ip, port}, {:socket, peer}, _ctx, state) do
-    ports = Map.put(state.ports, peer, port)
+    ports = state.ports |> Map.put(peer, port)
     reply = if map_size(ports) == 2, do: [reply_to: {state.from, ports}], else: []
     {reply, %{state | ports: ports}}
   end
 
   defp socket(peer, {ip, port}) do
-    endpoint = %UDP.Endpoint{destination_address: ip, destination_port_no: port, latch?: true}
+    endpoint = %UDP.Endpoint{
+      destination_address: ip,
+      destination_port_no: port,
+      latch?: true
+    }
 
     child({:socket, peer}, endpoint)
     |> child({:tee, peer}, Tee)
