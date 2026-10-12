@@ -1,10 +1,9 @@
-# Everything shares the host network (the docker VM on macOS), so softphones
-# can reach Kamailio and the relay at ADVERTISE_IP. Unset, the stack stays on
-# loopback, which is all e2e.sh needs.
+# Host network, so Kamailio and the relay are reachable at ADVERTISE_IP without
+# port mappings; unset, everything stays on loopback, which is all e2e.sh needs.
 services:
   relay:
     build:
-      context: ../../.. # the ex_kamailio repo root: the image needs the library too
+      context: ../../.. # the repo root: the image needs the library too
       dockerfile: examples/relay_handler/docker/relay/Dockerfile
     network_mode: host
     environment:
@@ -54,7 +53,6 @@ services:
     cap_add: [NET_ADMIN, NET_RAW]
     devices: [/dev/net/tun]
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_HOSTNAME: relay-handler
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "false"

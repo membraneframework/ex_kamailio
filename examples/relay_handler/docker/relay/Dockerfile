@@ -4,8 +4,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The example depends on the library by path, so the image needs both;
-# the build context is the repo root.
 WORKDIR /src
 COPY mix.exs mix.lock ./
 COPY lib ./lib
