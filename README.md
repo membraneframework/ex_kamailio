@@ -37,11 +37,13 @@ end
 
 ```elixir
 config :ex_kamailio,
-  # Port the WebSocket server listens on for Kamailio. Required.
-  ws_port: 4003,
-
-  # Your `ExKamailio.CallHandler` module, or `{module, opts}`. Required.
+  # Your `ExKamailio.CallHandler` module, or `{module, opts}`. Default:
+  # `ExKamailio.CallHandler.Default`, which returns each peer's SDP unchanged.
   call_handler: MyApp.KamailioHandler,
+
+  # Where the WebSocket server listens for Kamailio. Defaults: loopback, 4003.
+  ws_ip: :loopback,
+  ws_port: 4003,
 
   # Idle time before `handle_idle/2` fires. Default: 30 min.
   idle_timeout: :timer.minutes(30),
@@ -54,13 +56,9 @@ config :ex_kamailio,
 codecs. Your handler can bind its own sockets and advertise them in the
 SDP it returns.
 
-The WebSocket transport is plain `ws` (no TLS), so run Kamailio and
-`ex_kamailio` on the same host or a trusted private network, never exposing
-the port to the public internet. The server binds to loopback (`127.0.0.1`) by
-default; when Kamailio reaches it from another host or container, set a reachable
-bind address, for example `config :ex_kamailio, ws_ip: {0, 0, 0, 0}`. That binds
-every interface, so use it only where the host sits behind a private network: the
-unencrypted `ws` port must never be reachable from the public internet.
+The WebSocket is plain `ws`, no TLS. When Kamailio runs on another host or in
+another container, set `ws_ip` to an address it can reach, `{0, 0, 0, 0}` for
+every interface, and keep the port inside a private network.
 
 ## Writing an `ExKamailio.CallHandler` implementation
 
