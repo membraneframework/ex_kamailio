@@ -10,7 +10,7 @@
       From: <sip:1000@[remote_ip]>;tag=[pid]SIPpTag00[call_number]
       To: <sip:1000@[remote_ip]>
       Call-ID: [call_id]
-      CSeq: 1 REGISTER
+      CSeq: [cseq] REGISTER
       Contact: <sip:1000@[local_ip]:[local_port];transport=[transport]>
       Max-Forwards: 70
       Expires: 86400
