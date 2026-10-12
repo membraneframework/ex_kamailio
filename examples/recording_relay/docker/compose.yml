@@ -28,10 +28,9 @@ services:
     depends_on:
       relay:
         condition: service_healthy
-        restart: true # lwsc does not reconnect to a restarted relay
 
-  # Registers as 1000 and echoes back whatever RTP it receives. The CSeq comes
-  # from the clock, so registering again after a restart is still valid.
+  # Registers as 1000 and echoes back whatever RTP it receives; run by e2e.sh.
+  # The CSeq comes from the clock, so registering again after a restart is valid.
   sipp-uas:
     build: ./sipp
     network_mode: host
@@ -39,12 +38,8 @@ services:
       sh -c "sipp -sf register.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5070 -m 1 -base_cseq $$(date +%s) > /dev/null
       && exec sipp -sf uas.xml -i 127.0.0.1 -p 5070 -mi 127.0.0.1 -mp 6000 -rtp_echo"
     depends_on:
-      kamailio:
-        condition: service_started
-        restart: true # Kamailio keeps registrations in memory only
-      relay:
-        condition: service_healthy
-        restart: true # restarts are not transitive, so follow Kamailio here too
+      - kamailio
+    profiles: [e2e]
 
   # Calls 1000 and plays SIPp's g711a.pcap; run by e2e.sh.
   sipp-uac:

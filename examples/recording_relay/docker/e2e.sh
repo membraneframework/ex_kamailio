@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")"
 
 rm -f recordings/*.raw
-docker compose up -d --build --wait --force-recreate
+docker compose up -d --build --wait --force-recreate relay kamailio sipp-uas
 docker compose run --build --rm sipp-uac > /dev/null
 
 expected=56640 # PCMA bytes in SIPp's g711a.pcap: 236 packets of 240
