@@ -4,10 +4,9 @@ defmodule ExKamailio.Session do
   the SIP identifiers plus every SDP that crossed the wire, in both
   directions. Each field is nil until the call reaches that point.
 
-  - `call_id` / `from_tag` / `to_tag` — SIP identifiers forwarded by Kamailio.
-  - `from_offerer_sdp` / `from_answerer_sdp` — `%ExSDP{}` received from that
-    peer.
-  - `to_answerer_sdp` / `to_offerer_sdp` — `%ExSDP{}` the handler returned,
+  - `call_id`, `from_tag`, `to_tag`: SIP identifiers forwarded by Kamailio.
+  - `from_offerer_sdp`, `from_answerer_sdp`: `%ExSDP{}` received from that peer.
+  - `to_answerer_sdp`, `to_offerer_sdp`: `%ExSDP{}` the handler returned,
     forwarded by Kamailio to that peer.
   """
 
