@@ -40,7 +40,8 @@ phones reach them at. You need Docker with Compose v2, and ffmpeg for
 
 Docker runs in a Linux VM here, so the host network is the VM's, and no
 other device can reach it. The stack joins a tailnet instead, and so do the
-phones.
+phones. Docker Desktop has host networking off by default; turn it on in its
+settings. Tested with Colima.
 
 1. Start the tailscale sidecar and log it into your tailnet with the URL it
    prints (a free account will do):

@@ -3,8 +3,8 @@ defmodule RecordingRelay do
   `ExKamailio.CallHandler` that relays RTP between the two peers of a call
   through a Membrane pipeline and records both directions.
 
-  ex_kamailio only passes SDP between Kamailio and this module; the media is
-  the business of this module. Every call gets its own `RecordingRelay.Pipeline`
+  ex_kamailio only passes SDP between Kamailio and this module; handling the
+  media is this module's job. Every call gets its own `RecordingRelay.Pipeline`
   with one UDP socket per peer, and each peer's SDP goes on with the relay's
   address and port in place of the peer's own, so that the other peer sends
   its RTP to the relay.

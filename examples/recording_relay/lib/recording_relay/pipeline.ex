@@ -1,14 +1,21 @@
 defmodule RecordingRelay.Pipeline do
   @moduledoc """
-  The media path of one call: a `Membrane.UDP.Endpoint` facing each peer,
-  cross-linked so that whatever one peer sends goes out to the other.
+  The media path of one call: a UDP socket facing each peer, and whatever
+  arrives on one goes out through the other and into a file.
 
-  `offer/2` binds both sockets, before their ports get into any SDP, and aims
-  the offerer-facing one at the offerer; `answer/2` aims the other at the
-  answerer. Either address is only where the first packets go: each socket
-  then latches onto the source of what it receives, which is what gets
-  through a peer's NAT. Each direction is also written, with the RTP headers
-  stripped, to `<recordings_dir>/<call_id>__<from>_to_<to>.raw`.
+      {:socket, :offerer} -> {:tee, :offerer} -> {:socket, :answerer}
+                                              -> RTP.Parser -> File.Sink (offerer_to_answerer.raw)
+
+      {:socket, :answerer} -> {:tee, :answerer} -> {:socket, :offerer}
+                                                -> RTP.Parser -> File.Sink (answerer_to_offerer.raw)
+
+  The sockets are `Membrane.UDP.Endpoint`s. `offer/2` binds both, before their
+  ports get into any SDP, and aims the offerer-facing one at the offerer;
+  `answer/2` aims the other at the answerer. Either address is only where the
+  first packets go: each socket then latches onto the source of what it
+  receives, which is what gets through a peer's NAT. The parser strips the RTP
+  headers, so the files in `<recordings_dir>/<call_id>__<direction>.raw` hold
+  the bare payload.
   """
 
   use Membrane.Pipeline
