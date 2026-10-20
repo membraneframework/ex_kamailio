@@ -9,7 +9,8 @@ defmodule RecordingRelay.Pipeline do
       {:socket, :answerer} -> {:tee, :answerer} -> {:socket, :offerer}
                                                 -> RTP.Parser -> File.Sink (answerer_to_offerer.raw)
 
-  The sockets are `Membrane.UDP.Endpoint`s. `offer/2` binds both, before their
+  The sockets are `Membrane.UDP.Endpoint`s on the first free consecutive pair
+  of ports from `rtp_ports`. `offer/2` binds both, before their
   ports get into any SDP, and aims the offerer-facing one at the offerer;
   `answer/2` aims the other at the answerer. Either address is only where the
   first packets go: each socket then latches onto the source of what it
@@ -45,14 +46,28 @@ defmodule RecordingRelay.Pipeline do
     File.mkdir_p!(recordings_dir)
     file_name = call_id |> String.replace(~r/[^\w.@-]/, "_")
     prefix = Path.join(recordings_dir, file_name)
-    {[], %{prefix: prefix, ports: %{}, from: nil}}
+    {[], %{prefix: prefix, base_port: free_base_port(), ports: %{}, from: nil}}
+  end
+
+  # shortcut: two calls set up at once can pick the same pair, and the range
+  # may run out; reserve ports in one process if either happens.
+  defp free_base_port() do
+    first..last//1 = Application.fetch_env!(:recording_relay, :rtp_ports)
+    Enum.find(first..last//2, fn port -> free?(port) and free?(port + 1) end)
+  end
+
+  defp free?(port) do
+    case :gen_udp.open(port) do
+      {:ok, socket} -> :gen_udp.close(socket) == :ok
+      {:error, _} -> false
+    end
   end
 
   @impl true
   def handle_call({:offer, offerer}, ctx, state) do
     spec = [
-      socket(:offerer, offerer),
-      socket(:answerer, @nowhere),
+      socket(:offerer, state.base_port, offerer),
+      socket(:answerer, state.base_port + 1, @nowhere),
       get_child({:tee, :offerer}) |> get_child({:socket, :answerer}),
       get_child({:tee, :answerer}) |> get_child({:socket, :offerer}),
       get_child({:tee, :offerer}) |> recording(state.prefix, "offerer_to_answerer"),
@@ -76,8 +91,9 @@ defmodule RecordingRelay.Pipeline do
     {reply, %{state | ports: ports}}
   end
 
-  defp socket(peer, {ip, port}) do
+  defp socket(peer, local_port, {ip, port}) do
     endpoint = %UDP.Endpoint{
+      local_port_no: local_port,
       destination_address: ip,
       destination_port_no: port,
       latch?: true

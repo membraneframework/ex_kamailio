@@ -21,43 +21,21 @@ A-law and plays with:
 
 ## Running the demo
 
-Docker Compose runs Kamailio with the library's `kamailio.cfg` and the relay
-on the host network. `ADVERTISE_IP` in `docker/.env` is the address the
-phones reach them at. You need Docker with Compose v2, and ffmpeg for
-`ffplay`. The first build takes a few minutes.
+Docker Compose runs Kamailio with the library's `kamailio.cfg` and the relay,
+with SIP (5060) and the relay's RTP range (10000-10099) published, so the
+stack is reachable on the local network at the machine's address. You need
+Docker with Compose v2, and ffmpeg for `ffplay`. The first build takes a few
+minutes.
 
-### Linux
-
-1. Put the machine's LAN address in `.env` and start the stack:
+1. Put the machine's IP address on the local network (`ip -4 addr` on Linux,
+   `ipconfig getifaddr en0` on macOS) in `docker/.env` and start the stack:
 
        cd docker
        echo ADVERTISE_IP=192.168.1.10 > .env
        docker compose up -d --build
 
-2. Register two softphones as described below and call one from the other.
-
-### macOS
-
-Docker runs in a Linux VM here, so the host network is the VM's, and no
-other device can reach it. The stack joins a tailnet instead, and so do the
-phones. Docker Desktop has host networking off by default; turn it on in its
-settings. Tested with Colima.
-
-1. Start the tailscale sidecar and log it into your tailnet with the URL it
-   prints (a free account will do):
-
-       cd docker
-       docker compose --profile tailscale up -d tailscale
-       docker compose logs tailscale
-
-2. Put the VM's tailnet address in `.env` and start the stack:
-
-       echo ADVERTISE_IP=$(docker compose exec -T tailscale tailscale ip -4) > .env
-       docker compose up -d --build
-
-3. Install Tailscale on the phones, or on the Mac for a softphone there, and
-   log into the same tailnet. Then register two softphones as described below
-   and call one from the other.
+2. Register two softphones on the same network as described below and call
+   one from the other. One of them can run on the machine itself.
 
 ### Softphones
 
