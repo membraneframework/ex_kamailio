@@ -2,7 +2,7 @@ defmodule ExKamailio.Session do
   @moduledoc """
   State of a single call, threaded through `ExKamailio.CallHandler` callbacks:
   the SIP identifiers plus every SDP that crossed the wire, in both
-  directions. Each field is nil until the call reaches that point.
+  directions. A field is nil until the call has reached the step that fills it.
 
   - `call_id`, `from_tag`, `to_tag`: SIP identifiers forwarded by Kamailio.
   - `from_offerer_sdp`, `from_answerer_sdp`: `%ExSDP{}` received from that peer.

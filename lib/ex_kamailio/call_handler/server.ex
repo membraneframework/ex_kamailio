@@ -2,8 +2,8 @@ defmodule ExKamailio.CallHandler.Server do
   @moduledoc false
   # One process per call: runs the handler's callbacks and holds the
   # `%ExKamailio.Session{}` and the handler's state. Registered by call_id,
-  # because Kamailio spreads one call's commands over a pool of WebSocket
-  # connections.
+  # because one call's commands arrive on different WebSocket connections:
+  # each Kamailio worker process has its own.
   #
   # TODO: prompt teardown of crashed calls (rtpengine `--b2b-url` analogue).
   # Right now information about crash of a call handler process does not

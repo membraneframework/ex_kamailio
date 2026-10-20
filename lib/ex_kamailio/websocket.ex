@@ -1,9 +1,9 @@
 defmodule ExKamailio.WebSocket do
   @moduledoc false
-  # Kamailio's rtpengine `ng` protocol, one process per WebSocket connection:
-  # decodes the `<cookie> <bencode>` frame, parses the SDP and hands the
-  # command to the call's `CallHandler.Server`. Nothing else in the library
-  # speaks rtpengine.
+  # WebSock handler for the rtpengine `ng` protocol, one process per
+  # connection. Decodes the `<cookie> <bencode>` frame, parses the SDP and
+  # hands the command to the call's `CallHandler.Server`. Nothing else in the
+  # library speaks rtpengine.
 
   @behaviour WebSock
   require Logger
