@@ -16,11 +16,18 @@ switch it to its gRPC forwarder once with `colima stop` and
 `colima start --port-forwarder grpc`; the setting sticks.
 
 1. Set `ADVERTISE_IP` to the machine's IP address in the local network and
-   start the stack:
+   start the stack.
+
+   Linux:
 
        cd docker
-       echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env   # Linux
-       echo ADVERTISE_IP=$(ipconfig getifaddr en0) > .env        # macOS
+       echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env
+       docker compose up -d --build
+
+   macOS:
+
+       cd docker
+       echo ADVERTISE_IP=$(ipconfig getifaddr en0) > .env
        docker compose up -d --build
 
 2. Install Linphone on the machine and on a phone on the same Wi-Fi, register
