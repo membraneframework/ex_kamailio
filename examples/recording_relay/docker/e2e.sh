@@ -4,7 +4,7 @@
 set -eu
 cd "$(dirname "$0")"
 
-call="recordings/1-1@127.0.0.1" # SIPp's Call-ID; other recordings stay untouched
+call="recordings/1-1@127.0.0.1" # SIPp's Call-ID is <call>-<pid>@<ip>, and sipp is PID 1 in its container
 rm -f "$call"__*.raw
 export ADVERTISE_IP=127.0.0.1 # overrides a .env left over from a phone demo
 docker compose up -d --build --wait relay kamailio sipp-uas

@@ -10,12 +10,13 @@ defmodule RecordingRelay.Pipeline do
                                                 -> RTP.Parser -> File.Sink (answerer_to_offerer.raw)
 
   The sockets are `Membrane.UDP.Endpoint`s on the first free consecutive pair
-  of ports from `rtp_ports`. `offer/2` binds both, before their ports get into
-  any SDP, and aims the offerer-facing one at the offerer; `answer/2` aims the
-  other at the answerer. Either address is only where the first packets go:
-  each socket then latches onto the source of what it receives, which is what
-  gets through a peer's NAT. The parser strips the RTP headers, so the files in
-  `<recordings_dir>/<call_id>__<direction>.raw` hold the bare payload.
+  of ports from `rtp_ports`. `offer/2` binds both and returns their ports,
+  aiming the offerer-facing one at the offerer; `answer/2` aims the other at
+  the answerer. Those addresses only get the first packets: with `latch?` each
+  socket then sends to wherever the last packet it received came from, the one
+  address that reaches a peer behind NAT. The parser strips the RTP headers, so
+  the files in `<recordings_dir>/<call_id>__<direction>.raw` hold the bare
+  payload.
   """
 
   use Membrane.Pipeline
@@ -24,7 +25,7 @@ defmodule RecordingRelay.Pipeline do
 
   @type address :: {:inet.ip_address(), :inet.port_number()}
 
-  # A destination for the answerer-facing socket until the answer comes: the discard port.
+  # UDP.Endpoint wants a destination up front; the answer brings the real one.
   @nowhere {{127, 0, 0, 1}, 9}
 
   @spec start_link(call_id :: String.t()) :: Membrane.Pipeline.on_start()
@@ -48,8 +49,8 @@ defmodule RecordingRelay.Pipeline do
     {[], %{prefix: prefix, base_port: free_base_port(), ports: %{}, from: nil}}
   end
 
-  # shortcut: two calls set up at once can pick the same pair, and the range
-  # may run out; reserve ports in one process if either happens.
+  # Two calls set up at once can pick the same pair and the range can run out;
+  # a port allocator process would fix both.
   defp free_base_port() do
     first..last//1 = Application.fetch_env!(:recording_relay, :rtp_ports)
     Enum.find(first..last//2, fn port -> free?(port) and free?(port + 1) end)

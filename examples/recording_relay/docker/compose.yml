@@ -1,6 +1,6 @@
 # Everything shares the relay's network namespace, so Kamailio reaches the
-# relay on loopback and one set of published ports exposes the stack on the
-# LAN at ADVERTISE_IP; unset, the e2e test runs it all on loopback.
+# relay on loopback and the relay's published ports expose the whole stack on
+# the LAN at ADVERTISE_IP, 127.0.0.1 when unset.
 services:
   relay:
     build:
