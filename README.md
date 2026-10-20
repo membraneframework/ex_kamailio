@@ -88,20 +88,21 @@ Peers are named by their RFC 3264 roles: the **offerer** proposes SDP, the
 
 1. The offerer sends `INVITE` with SDP. Kamailio passes the SDP to
    `ex_kamailio` as an `offer` command. `ex_kamailio` starts a call process and
-   calls `ExKamailio.CallHandler.handle_offer/3`; the SDP it returns goes into
-   the `INVITE` forwarded to the answerer.
+   calls `c:ExKamailio.CallHandler.handle_offer/3`; the SDP it returns goes
+   into the `INVITE` forwarded to the answerer.
 2. The answerer replies `200 OK` with SDP. Kamailio passes it as an `answer`
-   command, and the SDP `ExKamailio.CallHandler.handle_answer/3` returns goes
+   command, and the SDP `c:ExKamailio.CallHandler.handle_answer/3` returns goes
    into the `200 OK` forwarded to the offerer.
-3. On `BYE`, Kamailio sends `delete` and `ExKamailio.CallHandler.handle_delete/2`
-   releases what the handler allocated. A cancelled or rejected `INVITE` sends
-   nothing; that call ends by the idle timeout below.
+3. On `BYE`, Kamailio sends `delete` and
+   `c:ExKamailio.CallHandler.handle_delete/2` releases what the handler
+   allocated. A cancelled or rejected `INVITE` sends nothing; that call ends
+   by the idle timeout below.
 
 ## Idle calls
 
 When `delete` never comes, because a peer crashed or a `BYE` got lost, the
 call process would live forever. So when no command arrives for
-`:idle_timeout` (default 30 min), `ExKamailio.CallHandler.handle_idle/2`
+`:idle_timeout` (default 30 min), `c:ExKamailio.CallHandler.handle_idle/2`
 runs. Its default returns `{:stop, state}`, which runs `handle_delete/2` and
 stops the process; return `{:ok, state}` to keep the call.
 
