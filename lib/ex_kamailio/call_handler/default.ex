@@ -1,10 +1,10 @@
 defmodule ExKamailio.CallHandler.Default do
   @moduledoc """
-  Passthrough used when `:call_handler` is not set. It returns each peer's SDP
+  Passthrough used when `:call_handler` config field is not set. It returns each peer's SDP
   unchanged, so the peers send media straight to each other and an app that
   pulls ex_kamailio in without configuring it, e.g. as a transitive
-  dependency, still routes calls. Set `:call_handler` to handle the media
-  yourself.
+  dependency, still routes calls. Set `:call_handler` config field to handle the media
+  yourself. Take a look at `README.md` for more information.
   """
   use ExKamailio.CallHandler
 

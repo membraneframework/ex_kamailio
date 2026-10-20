@@ -14,10 +14,10 @@ defmodule ExKamailio.CallHandler do
         def init(_session, _opts), do: {:ok, %{}}
 
         @impl true
-        def handle_offer(from_offerer_sdp, _session, state), do: {:ok, from_offerer_sdp, state}
+        def handle_offer(from_offerer_sdp, session, state), do: {:ok, to_answerer_sdp, state}
 
         @impl true
-        def handle_answer(from_answerer_sdp, _session, state), do: {:ok, from_answerer_sdp, state}
+        def handle_answer(from_answerer_sdp, session, state), do: {:ok, to_offerer_sdp, state}
       end
 
   `use ExKamailio.CallHandler` defines overridable defaults for
@@ -65,16 +65,19 @@ defmodule ExKamailio.CallHandler do
 
   ## Callback deadline
 
-  Kamailio waits `rtpengine_tout_ms` (default 1000 ms) for each reply; on
-  timeout it stops using ex_kamailio for `rtpengine_disable_tout` (default
-  60 s) and fails every call meanwhile. So a callback gets `:callback_timeout`
-  (default 800 ms); past that ex_kamailio replies with an error before Kamailio
-  gives up and tears that call down, `c:handle_delete/2` included. Keep slow
-  work out of callbacks.
+  Kamailio waits `rtpengine_tout_ms` (default 1000 ms) for each reply. A
+  single late reply makes it mark ex_kamailio as down for
+  `rtpengine_disable_tout` (default 60 s), and every call in that window
+  fails on the spot, whether ex_kamailio has recovered or not.
 
-  The remaining 200 ms must cover serialization and the round trip to
-  Kamailio. Over loopback that is plenty; across a network it may not be, so
-  raise `rtpengine_tout_ms` or lower `:callback_timeout`.
+  That is why a callback gets `:callback_timeout` (default 800 ms). Past it,
+  ex_kamailio replies with an error while Kamailio is still listening and
+  tears that one call down, `c:handle_delete/2` included. Losing one call
+  beats losing a minute of all of them, so keep slow work out of callbacks.
+
+  The remaining 200 ms cover serialization and the round trip to Kamailio.
+  Over loopback that is plenty; across a network it may not be, so raise
+  `rtpengine_tout_ms` or lower `:callback_timeout`.
   """
 
   alias ExKamailio.Session
