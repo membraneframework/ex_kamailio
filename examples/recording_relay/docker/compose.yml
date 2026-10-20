@@ -1,11 +1,14 @@
-# Host network, so Kamailio and the relay are reachable at ADVERTISE_IP without
-# port mappings; unset, everything stays on loopback, which is all e2e.sh needs.
+# Everything shares the relay's network namespace, so Kamailio reaches the
+# relay on loopback and one set of published ports exposes the stack on the
+# LAN at ADVERTISE_IP; unset, the e2e test runs it all on loopback.
 services:
   relay:
     build:
       context: ../../.. # the repo root: the image needs the library too
       dockerfile: examples/recording_relay/docker/relay/Dockerfile
-    network_mode: host
+    ports:
+      - "5060:5060/udp"
+      - "10000-10099:10000-10099/udp" # the relay's rtp_ports
     environment:
       ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
       RECORDINGS_DIR: /recordings
@@ -19,7 +22,7 @@ services:
 
   kamailio:
     build: ./kamailio
-    network_mode: host
+    network_mode: service:relay
     environment:
       ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
       RTPENGINE_SOCK: ws://127.0.0.1:4003
@@ -33,7 +36,7 @@ services:
   # The CSeq comes from the clock, so registering again after a restart is valid.
   sipp-uas:
     build: ./sipp
-    network_mode: host
+    network_mode: service:relay
     command: >
       sh -c "sipp -sf register.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5070 -m 1 -base_cseq $$(date +%s) > /dev/null
       && exec sipp -sf uas.xml -i 127.0.0.1 -p 5070 -mi 127.0.0.1 -mp 6000 -rtp_echo"
@@ -44,23 +47,6 @@ services:
   # Calls 1000 and plays SIPp's g711a.pcap; run by e2e.sh.
   sipp-uac:
     build: ./sipp
-    network_mode: host
+    network_mode: service:relay
     command: sipp -sf uac.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5080 -mi 127.0.0.1 -mp 7000 -m 1
     profiles: [e2e]
-
-  # Joins the host network to a tailnet, so phones elsewhere can reach the stack.
-  tailscale:
-    image: tailscale/tailscale:stable
-    network_mode: host
-    cap_add: [NET_ADMIN, NET_RAW]
-    devices: [/dev/net/tun]
-    environment:
-      TS_HOSTNAME: recording-relay
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_USERSPACE: "false"
-    volumes:
-      - tailscale-state:/var/lib/tailscale
-    profiles: [tailscale]
-
-volumes:
-  tailscale-state:

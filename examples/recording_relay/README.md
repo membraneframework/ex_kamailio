@@ -5,47 +5,25 @@ through a Membrane pipeline and records both directions.
 
 ## Running the demo
 
-Docker Compose runs Kamailio with the library's `kamailio.cfg` and the relay
-on the host network. `ADVERTISE_IP` in `docker/.env` is the address the
-SIP clients reach them at. You need Docker with Compose v2, ffmpeg for
-`ffplay`, and a phone to call from. The first build takes a few minutes.
+Docker Compose runs Kamailio with the library's `kamailio.cfg` and the relay,
+with SIP (5060) and the relay's RTP range (10000-10099) published, so the
+stack is reachable on the local network at the machine's address. You need
+Docker with Compose v2, ffmpeg for `ffplay`, and a phone to call from. The
+first build takes a few minutes.
 
-### Linux
+Docker Desktop publishes UDP ports as they are. Colima forwards only TCP by
+default, so switch it to its gRPC forwarder once: `colima stop` and
+`colima start --port-forwarder grpc`; the setting sticks.
 
 1. Set `ADVERTISE_IP` to the machine's IP address in the local network and
-   start the stack. `hostname -I` usually prints that address first:
+   start the stack:
 
        cd docker
-       echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env
+       echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env  # macOS: $(ipconfig getifaddr en0)
        docker compose up -d --build
 
 2. Install Linphone on the machine and on a phone on the same Wi-Fi, register
    both as described below and call one from the other.
-
-### macOS
-
-On Linux the stack sits on the machine's own network, so a phone on the same
-Wi-Fi reaches it directly. Docker on macOS runs in a Linux VM, so the host
-network is the VM's and nothing outside it, the Mac included, can reach the
-stack. The stack joins a tailnet instead, and so do the Mac and the phone.
-Docker Desktop has host networking off by default; turn it on in its
-settings. Colima works out of the box.
-
-1. Start the tailscale sidecar and log it into your tailnet with the URL it
-   prints (a free account will do):
-
-       cd docker
-       docker compose --profile tailscale up -d tailscale
-       docker compose logs tailscale
-
-2. Set `ADVERTISE_IP` to the VM's tailnet address and start the stack:
-
-       echo ADVERTISE_IP=$(docker compose exec -T tailscale tailscale ip -4) > .env
-       docker compose up -d --build
-
-3. Install Tailscale and Linphone on the Mac and on a phone, log both into
-   the same tailnet, then register them as described below and call one from
-   the other.
 
 ### Softphones
 
@@ -73,8 +51,9 @@ The relay runs from its image, so after a change in `lib/` rebuild it with
 `RecordingRelay` implements `ExKamailio.CallHandler`:
 
 - `init/2` starts one `RecordingRelay.Pipeline` per call.
-- `handle_offer/3` binds a UDP socket per peer and returns the offer with the
-  relay's address and port in place of the offerer's.
+- `handle_offer/3` binds a UDP socket per peer, on the first free pair of
+  ports from 10000-10099, and returns the offer with the relay's address and
+  port in place of the offerer's.
 - `handle_answer/3` points the answerer-facing socket at the answerer and
   returns the answer rewritten the same way.
 - `handle_delete/2` stops the pipeline.
@@ -103,7 +82,7 @@ recordings hold exactly the pcap's payload:
     cd docker
     ./e2e.sh
 
-Without `.env` the stack stays on loopback, which is all the test needs.
+The test keeps the stack on loopback whatever `.env` says.
 
 ## Limitations
 
