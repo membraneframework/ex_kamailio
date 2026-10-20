@@ -7,8 +7,8 @@ through a Membrane pipeline and records both directions.
 
 Docker Compose runs Kamailio with the library's `kamailio.cfg` and the relay
 on the host network. `ADVERTISE_IP` in `docker/.env` is the address the
-phones reach them at. You need Docker with Compose v2, and ffmpeg for
-`ffplay`. The first build takes a few minutes.
+SIP clients reach them at. You need Docker with Compose v2, ffmpeg for
+`ffplay`, and a phone to call from. The first build takes a few minutes.
 
 ### Linux
 
@@ -19,13 +19,16 @@ phones reach them at. You need Docker with Compose v2, and ffmpeg for
        echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env
        docker compose up -d --build
 
-2. Register two softphones as described below and call one from the other.
+2. Install Linphone on the machine and on a phone on the same Wi-Fi, register
+   both as described below and call one from the other.
 
 ### macOS
 
-Docker runs in a Linux VM here, so the host network is the VM's, and no
-other device can reach it. The stack joins a tailnet instead, and so do the
-phones. Docker Desktop has host networking off by default; turn it on in its
+On Linux the stack sits on the machine's own network, so a phone on the same
+Wi-Fi reaches it directly. Docker on macOS runs in a Linux VM, so the host
+network is the VM's and nothing outside it, the Mac included, can reach the
+stack. The stack joins a tailnet instead, and so do the Mac and the phone.
+Docker Desktop has host networking off by default; turn it on in its
 settings. Colima works out of the box.
 
 1. Start the tailscale sidecar and log it into your tailnet with the URL it
@@ -40,21 +43,22 @@ settings. Colima works out of the box.
        echo ADVERTISE_IP=$(docker compose exec -T tailscale tailscale ip -4) > .env
        docker compose up -d --build
 
-3. Install Tailscale on the phones, or on the Mac for a softphone there, and
-   log into the same tailnet. Then register two softphones as described below
-   and call one from the other.
+3. Install Tailscale and Linphone on the Mac and on a phone, log both into
+   the same tailnet, then register them as described below and call one from
+   the other.
 
 ### Softphones
 
-In Linphone, add a third-party SIP account with:
+In Linphone, on the computer and on the phone, add a third-party SIP account
+with:
 
-- username: anything, different on each phone
+- username: anything, different on each end
 - password: anything, the Kamailio config checks no passwords
 - domain: the `ADVERTISE_IP` above
 - transport: UDP
 - media encryption: none (Settings → Call)
 
-Call the other phone by its username. The recordings land in
+Call the other end by its username. The recordings land in
 `docker/recordings/`, one file per direction, and play with:
 
     ffplay -f alaw -ar 8000 recordings/<call_id>__offerer_to_answerer.raw
