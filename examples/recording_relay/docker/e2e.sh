@@ -4,15 +4,16 @@
 set -eu
 cd "$(dirname "$0")"
 
-rm -f recordings/*.raw
+call="recordings/1-1@127.0.0.1" # SIPp's Call-ID; other recordings stay untouched
+rm -f "$call"__*.raw
 export ADVERTISE_IP=127.0.0.1 # overrides a .env left over from a phone demo
 docker compose up -d --build --wait relay kamailio sipp-uas
 docker compose run --rm sipp-uac > /dev/null
 
 expected=56640 # PCMA bytes in SIPp's g711a.pcap: 236 packets of 240
-for f in recordings/*.raw; do
+for f in "$call"__offerer_to_answerer.raw "$call"__answerer_to_offerer.raw; do
   size=$(wc -c < "$f")
   test "$size" -eq $expected || { echo "FAIL: $f has $size bytes, expected $expected"; exit 1; }
 done
-cmp recordings/*__offerer_to_answerer.raw recordings/*__answerer_to_offerer.raw
+cmp "$call"__offerer_to_answerer.raw "$call"__answerer_to_offerer.raw
 echo "OK: $expected bytes relayed each way"
