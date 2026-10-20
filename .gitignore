@@ -1,11 +1,26 @@
+# Mix artifacts
 _build/
 deps/
-doc/
-examples/*/_build/
-examples/*/deps/
 *.ez
 erl_crash.dump
+
+# Generated docs (ex_doc)
+doc/
+
+# Ignored examples build/deps trees too
+examples/*/_build/
+examples/*/deps/
+examples/*/erl_crash.dump
+
+# Editor
 .elixir_ls/
 .vscode/
+
+# macOS
 .DS_Store
+
+# Erlang crash dumps
+erl_crash.dump
+
+# Demo address, per machine
 .env

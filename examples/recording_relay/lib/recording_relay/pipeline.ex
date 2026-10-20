@@ -10,13 +10,12 @@ defmodule RecordingRelay.Pipeline do
                                                 -> RTP.Parser -> File.Sink (answerer_to_offerer.raw)
 
   The sockets are `Membrane.UDP.Endpoint`s on the first free consecutive pair
-  of ports from `rtp_ports`. `offer/2` binds both, before their
-  ports get into any SDP, and aims the offerer-facing one at the offerer;
-  `answer/2` aims the other at the answerer. Either address is only where the
-  first packets go: each socket then latches onto the source of what it
-  receives, which is what gets through a peer's NAT. The parser strips the RTP
-  headers, so the files in `<recordings_dir>/<call_id>__<direction>.raw` hold
-  the bare payload.
+  of ports from `rtp_ports`. `offer/2` binds both, before their ports get into
+  any SDP, and aims the offerer-facing one at the offerer; `answer/2` aims the
+  other at the answerer. Either address is only where the first packets go:
+  each socket then latches onto the source of what it receives, which is what
+  gets through a peer's NAT. The parser strips the RTP headers, so the files in
+  `<recordings_dir>/<call_id>__<direction>.raw` hold the bare payload.
   """
 
   use Membrane.Pipeline
