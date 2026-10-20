@@ -11,15 +11,16 @@ stack is reachable on the local network at the machine's address. You need
 Docker with Compose v2, ffmpeg for `ffplay`, and a phone to call from. The
 first build takes a few minutes.
 
-Docker Desktop publishes UDP ports as they are. Colima forwards only TCP by
-default, so switch it to its gRPC forwarder once: `colima stop` and
+Docker Desktop needs nothing extra. Colima forwards only TCP by default, so
+switch it to its gRPC forwarder once with `colima stop` and
 `colima start --port-forwarder grpc`; the setting sticks.
 
 1. Set `ADVERTISE_IP` to the machine's IP address in the local network and
    start the stack:
 
        cd docker
-       echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env  # macOS: $(ipconfig getifaddr en0)
+       echo ADVERTISE_IP=$(hostname -I | cut -d' ' -f1) > .env   # Linux
+       echo ADVERTISE_IP=$(ipconfig getifaddr en0) > .env        # macOS
        docker compose up -d --build
 
 2. Install Linphone on the machine and on a phone on the same Wi-Fi, register
@@ -82,7 +83,8 @@ recordings hold exactly the pcap's payload:
     cd docker
     ./e2e.sh
 
-The test keeps the stack on loopback whatever `.env` says.
+The test keeps the stack on loopback whatever `.env` says, and touches only
+its own recordings.
 
 ## Limitations
 
@@ -91,6 +93,8 @@ The test keeps the stack on loopback whatever `.env` says.
 - One audio stream per call; any other m-line is rejected with port 0.
 - G.711 A-law only; an offer without it is rejected with 488 Not Acceptable
   Here.
+- Up to 50 calls at once, as the RTP range has 100 ports, and two calls set
+  up at the same moment can grab the same pair.
 - The relay sends to the address from a peer's SDP until that peer's packets
   arrive, then to wherever the latest one came from. A peer behind NAT
   therefore hears nothing until it has sent something, and the relay doesn't
