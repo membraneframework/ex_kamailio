@@ -10,7 +10,6 @@ doc/
 # Ignored examples build/deps trees too
 examples/*/_build/
 examples/*/deps/
-examples/*/mix.lock
 examples/*/erl_crash.dump
 
 # Editor
@@ -23,5 +22,5 @@ examples/*/erl_crash.dump
 # Erlang crash dumps
 erl_crash.dump
 
-# Host-run relay recordings
-/examples/relay_handler/recordings/
+# Demo address, per machine
+.env

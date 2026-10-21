@@ -1,0 +1,52 @@
+# Everything shares the relay's network namespace, so Kamailio reaches the
+# relay on loopback and the relay's published ports expose the whole stack on
+# the LAN at ADVERTISE_IP, 127.0.0.1 when unset.
+services:
+  relay:
+    build:
+      context: ../../.. # the repo root: the image needs the library too
+      dockerfile: examples/recording_relay/docker/relay/Dockerfile
+    ports:
+      - "5060:5060/udp"
+      - "10000-10099:10000-10099/udp" # the relay's rtp_ports
+    environment:
+      ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
+      RECORDINGS_DIR: /recordings
+    volumes:
+      - ./recordings:/recordings
+    # Kamailio sidelines an rtpengine it cannot reach at startup for a minute.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/4003"]
+      interval: 2s
+      start_period: 60s
+
+  kamailio:
+    build: ./kamailio
+    network_mode: service:relay
+    environment:
+      ADVERTISE_IP: ${ADVERTISE_IP:-127.0.0.1}
+      RTPENGINE_SOCK: ws://127.0.0.1:4003
+    volumes:
+      - ../../../priv/kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
+    depends_on:
+      relay:
+        condition: service_healthy
+
+  # Registers as 1000 and echoes back whatever RTP it receives; run by e2e.sh.
+  # The CSeq comes from the clock, so registering again after a restart is valid.
+  sipp-uas:
+    build: ./sipp
+    network_mode: service:relay
+    command: >
+      sh -c "sipp -sf register.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5070 -m 1 -base_cseq $$(date +%s) > /dev/null
+      && exec sipp -sf uas.xml -i 127.0.0.1 -p 5070 -mi 127.0.0.1 -mp 6000 -rtp_echo"
+    depends_on:
+      - kamailio
+    profiles: [e2e]
+
+  # Calls 1000 and plays SIPp's g711a.pcap; run by e2e.sh.
+  sipp-uac:
+    build: ./sipp
+    network_mode: service:relay
+    command: sipp -sf uac.xml 127.0.0.1:5060 -i 127.0.0.1 -p 5080 -mi 127.0.0.1 -mp 7000 -m 1
+    profiles: [e2e]
