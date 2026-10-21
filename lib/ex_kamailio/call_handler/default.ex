@@ -1,11 +1,10 @@
 defmodule ExKamailio.CallHandler.Default do
   @moduledoc """
-  Passthrough handler used when no `:call_handler` is configured.
-
-  It returns each peer's SDP unchanged, so ex_kamailio allocates no media and
-  the two endpoints negotiate directly. This keeps the app functional out of the
-  box (and when pulled in as a transitive dependency); configure your own
-  `ExKamailio.CallHandler` to actually handle the media.
+  Passthrough used when `:call_handler` config field is not set. It returns each peer's SDP
+  unchanged, so the peers send media straight to each other and an app that
+  pulls ex_kamailio in without configuring it, as a transitive
+  dependency, still routes calls. Set `:call_handler` config field to handle the media
+  yourself. Take a look at `README.md` for more information.
   """
   use ExKamailio.CallHandler
 
