@@ -8,9 +8,11 @@ directions.
 
 ### Prerequisites
 
-- Docker with Compose v2. Docker Desktop works as is; Colima needs
-  `colima stop && colima start --port-forwarder grpc` once, for UDP.
-- ffmpeg, for `ffplay`.
+- Docker with Compose v2 (`docker compose`, not the legacy `docker-compose`).
+  - Linux: Docker Engine with the `docker-compose-plugin` package works as is.
+  - macOS: Docker Desktop works as is; Colima needs
+    `colima stop && colima start --port-forwarder grpc` once, for UDP.
+- ffmpeg, for `ffplay` (e.g. `apt install ffmpeg` or `brew install ffmpeg`).
 - A phone to call from.
 
 ### Steps
