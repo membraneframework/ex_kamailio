@@ -96,8 +96,8 @@ The callbacks receive the peer's parsed offer/answer (`%ExSDP{}`) and return the
 `ExKamailio.CallHandler` process with separate state.
 
 [`examples/recording_relay`](examples/recording_relay/README.md) is a complete
-handler that relays the media through a Membrane pipeline and records it, with
-Kamailio and SIPp in Docker and an end-to-end test.
+demo: a handler that relays the media through a Membrane pipeline and records
+it, with Kamailio and SIPp in Docker and an end-to-end test.
 
 ## Call flow
 

@@ -11,7 +11,7 @@ ENV MIX_ENV=prod
 # ex_kamailio is a path dependency, so deps.get needs its mix.exs too.
 COPY mix.exs /src/
 COPY examples/recording_relay/mix.exs examples/recording_relay/mix.lock ./
-RUN mix deps.get
+RUN mix deps.get && mix deps.compile --skip-local-deps
 
 COPY lib /src/lib
 COPY examples/recording_relay/config/config.exs config/

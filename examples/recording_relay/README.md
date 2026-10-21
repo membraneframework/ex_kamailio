@@ -1,22 +1,22 @@
 # recording_relay
 
-An `ExKamailio.CallHandler` that relays RTP between the two peers of a call
-through a Membrane pipeline and records both directions.
+A demo of an `ExKamailio.CallHandler` implementation that relays RTP between
+the two peers of a call through a Membrane pipeline and records both
+directions.
 
 ## Running the demo
 
-Docker Compose runs the relay and Kamailio with the library's `kamailio.cfg`,
-and publishes SIP on 5060 and the relay's RTP range 10000-10099, so the stack
-is reachable on the local network at the machine's address. You need
-Docker with Compose v2, ffmpeg for `ffplay`, and a phone to call from. The
-first build takes a few minutes.
+### Prerequisites
 
-Docker Desktop needs nothing extra. Colima forwards only TCP by default, so
-switch it to its gRPC forwarder once with `colima stop` and
-`colima start --port-forwarder grpc`; the setting sticks.
+- Docker with Compose v2. Docker Desktop works as is; Colima needs
+  `colima stop && colima start --port-forwarder grpc` once, for UDP.
+- ffmpeg, for `ffplay`.
+- A phone to call from.
+
+### Steps
 
 1. Set `ADVERTISE_IP` to the machine's address on the local network and
-   start the stack.
+   start the stack. The first build takes a few minutes.
 
    Linux:
 
